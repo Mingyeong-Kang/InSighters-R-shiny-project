@@ -48,3 +48,13 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+shoes/
+selfcheck/
+our_shoes/
+shoes_meta.csv
+pca_cache.rds
+shoes/
+selfcheck/
+our_shoes/
+shoes_meta.csv
+pca_cache.rds
