@@ -101,30 +101,39 @@ place_like_catalogue <- function(g, box_w = CAT_BOX_W, box_h = CAT_BOX_H, bottom
 # 좌우 반전 (카탈로그 신발은 대부분 앞코가 오른쪽). 4,096 벡터 -> 4,096 벡터
 mirror_vec <- function(v) mat_to_vec(vec_to_mat(v)[, IMG_SIZE:1])
 
-# ---- 화면 표시: 행렬 -> PNG data URI ---------------------------------------
+# ---- 화면 표시: 행렬 -> PNG data URI -------------------------------------
+# 64x64 를 브라우저가 확대하면 흐려지므로, R 에서 미리 scale 배로 키운다(최근접 이웃, kronecker).
+upscale <- function(m, scale = 1) if (scale > 1) kronecker(m, matrix(1, scale, scale)) else m
+
 png_uri <- function(arr) {
   raw <- png::writePNG(arr)
   paste0("data:image/png;base64,", base64enc::base64encode(raw))
 }
 
 # 흑백 이미지 (0~1)
-gray_uri <- function(v) png_uri(clamp(vec_to_mat(v)))
+gray_uri <- function(v, scale = 1) png_uri(upscale(clamp(vec_to_mat(v)), scale))
 
 # 부호가 있는 값(사진-평균, eigenshoe): 0 = 흰색, 음수 = 파랑, 양수 = 주황
-diverging_uri <- function(v, lim = NULL) {
-  m <- vec_to_mat(v)
-  if (is.null(lim)) lim <- max(abs(m), 1e-9)
+diverging_rgb <- function(m, lim) {
   t <- clamp(m / lim, -1, 1)
   neg <- c(0.13, 0.40, 0.75); pos <- c(0.85, 0.37, 0.05)
   arr <- array(1, c(nrow(m), ncol(m), 3))
-  for (k in 1:3) {
-    arr[, , k] <- ifelse(t < 0, 1 + (-t) * (neg[k] - 1), 1 + t * (pos[k] - 1))
-  }
-  png_uri(arr)
+  for (k in 1:3) arr[, , k] <- ifelse(t < 0, 1 + (-t) * (neg[k] - 1), 1 + t * (pos[k] - 1))
+  arr
+}
+diverging_uri <- function(v, lim = NULL, scale = 1) {
+  m <- vec_to_mat(v)
+  if (is.null(lim)) lim <- max(abs(m), 1e-9)
+  png_uri(diverging_rgb(upscale(m, scale), lim))
 }
 
-# 카드 안에 들어가는 이미지 태그 (클릭하면 확대 모달)
-shoe_img <- function(uri, alt = "shoe", size = 128, cls = "") {
-  tags$img(src = uri, alt = alt, width = size, height = size,
-           class = paste("shoe-img zoomable", cls), tabindex = "0")
+# 범례용 색 막대 (−lim … 0 … +lim) 를 R 로 그린 PNG
+diverging_legend_uri <- function(width = 240, height = 14) {
+  ramp <- matrix(rep(seq(-1, 1, length.out = width), each = height), height, width)
+  png_uri(diverging_rgb(ramp, 1))
+}
+
+# 이미지 태그
+shoe_img <- function(uri, alt = "shoe", size = 128) {
+  tags$img(src = uri, alt = alt, width = size, height = size, class = "img-fluid border rounded")
 }
