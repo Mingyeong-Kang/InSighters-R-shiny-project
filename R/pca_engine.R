@@ -107,28 +107,44 @@ search_similar <- function(pca, x, K, top_n = TOP_N, exclude_id = NULL) {
   list(z = z, top = top, prediction = vote_category(top))
 }
 
-# 최빈 카테고리. 동률이면 동률 카테고리 중 가장 가까운 신발의 카테고리를 선택
-vote_category <- function(top) {
-  tab <- table(top$category)
-  winners <- names(tab)[tab == max(tab)]
-  if (length(winners) == 1) return(winners)
-  top$category[top$category %in% winners][1]
+# 좌우 방향 자동 맞춤: 원본과 좌우반전 사진을 둘 다 검색해 Best match 거리가 더 짧은 쪽을 사용
+# (카탈로그 신발은 대부분 앞코가 오른쪽 — 팀원 구가현 브랜치 아이디어). 업로드·팀원 사진용.
+search_auto_flip <- function(pca, x, K, top_n = TOP_N, exclude_id = NULL) {
+  a <- search_similar(pca, x, K, top_n, exclude_id)
+  xf <- mirror_vec(x)
+  b <- search_similar(pca, xf, K, top_n, exclude_id)
+  if (b$top$distance[1] < a$top$distance[1]) { b$x <- xf; b$flipped <- TRUE; b }
+  else { a$x <- x; a$flipped <- FALSE; a }
 }
 
-# ---- 추가 분석: Leave-one-out Top-5 투표 정확도 (K 별) ---------------------
-# 카탈로그의 각 사진을 자기 자신을 뺀 나머지에서 검색했을 때 정답률
-loo_accuracy <- function(pca, Ks = c(1, 2, 3, 5, 10, 15, 20, 30, 50, 75, 100)) {
-  Ks <- Ks[Ks <= ncol(pca$scores)]
+# 최빈 카테고리. 동률이면 동률 카테고리 중 가장 가까운 신발의 카테고리를 선택
+vote_category <- function(top) vote_vec(top$category)
+
+# cc: 가까운 순서대로 정렬된 카테고리 벡터
+vote_vec <- function(cc) {
+  u <- unique(cc)
+  cnt <- tabulate(match(cc, u))
+  winners <- u[cnt == max(cnt)]
+  cc[cc %in% winners][1]
+}
+
+# ---- 추가 분석: Leave-one-out Top-5 투표 정확도 (K = 1 ~ 100) -------------
+# 카탈로그의 각 사진을 자기 자신을 뺀 나머지 1,999장에서 검색했을 때 정답률.
+# 전체 정렬 대신 행별 최솟값을 5번 찾는 방식으로 빠르게 계산 (팀원 구가현 prep.R 아이디어).
+loo_accuracy <- function(pca, Ks = 1:min(100, ncol(pca$scores))) {
   cats <- pca$meta$category
+  n <- length(cats)
   acc <- vapply(Ks, function(K) {
     S <- pca$scores[, seq_len(K), drop = FALSE]
     sq <- rowSums(S^2)
     D <- outer(sq, sq, "+") - 2 * tcrossprod(S)
     diag(D) <- Inf
-    pred <- apply(D, 1, function(d) {
-      o <- order(d)[1:TOP_N]
-      vote_category(data.frame(category = cats[o]))
-    })
+    nn <- matrix(0L, n, TOP_N)
+    for (j in seq_len(TOP_N)) {
+      nn[, j] <- max.col(-D, ties.method = "first")
+      D[cbind(seq_len(n), nn[, j])] <- Inf
+    }
+    pred <- apply(matrix(cats[nn], n, TOP_N), 1, vote_vec)
     mean(pred == cats)
   }, numeric(1))
   data.frame(K = Ks, accuracy = acc)

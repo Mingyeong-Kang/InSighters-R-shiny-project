@@ -33,7 +33,7 @@ P2_students 2/                 ← 교수님 zip 을 푼 폴더 = 프로젝트 �
 ## 2. 설치 · 실행
 
 ```r
-install.packages(c("shiny", "bslib", "png", "jpeg", "base64enc", "plotly", "DT"))
+install.packages(c("shiny", "bslib", "png", "jpeg", "base64enc", "plotly", "DT", "magick"))
 setwd("~/Downloads/P2_students 2")          # 이 폴더를 작업 디렉터리로
 source("scripts/precompute_pca.R")          # 최초 1회 (~1–2분). 검증 결과가 콘솔에 출력됨
 shiny::runApp()
@@ -58,7 +58,14 @@ shiny::runApp()
 검증(`scripts/precompute_pca.R` 출력): VᵀV = I 오차, Xc V = scores 오차, `prcomp` 와 분산비율·PC1 비교, K 증가 시 복원 RMSE 감소.
 **효율성:** PCA 는 한 번만 계산해 `.rds` 로 캐시. 검색 1회 = 2000×K 행렬 거리 계산(수 ms).
 
-새 사진 전처리(`preprocess_photo`): 흑백 변환 → 테두리 중앙값으로 배경 추정(어두우면 반전) → 배경을 흰색(1)으로 보정 → 신발 영역 자르기 → 흰 여백으로 정사각형 → 64×64 면적평균 축소. 카탈로그·selfcheck 는 이미 64×64 이므로 그대로 사용.
+새 사진 전처리(`preprocess_photo`): EXIF 회전 보정(magick) → 흑백 → 테두리 중앙값으로 배경 추정(어두우면 반전) → 배경을 흰색(1)으로 보정 → 신발 영역 자르기 → **카탈로그와 같은 자리에 배치**(비율 유지, 62×47 상자, 가로 가운데, 바닥 55번째 줄 — 실제 2,000장 측정값). 업로드는 원본/좌우반전 중 Best match 가 더 가까운 쪽을 자동 선택. 카탈로그·selfcheck 는 이미 64×64 이므로 그대로 사용.
+
+### 실제 데이터 검증 결과 (`data/pca_verification.md`)
+- `prcomp` 와 PC1–5 분산비율 일치 (0.303, 0.157, 0.070, 0.041, 0.032), VᵀV = I 오차 < 1e-12
+- selfcheck: K = 30, 50 에서 4/4 정답 · K = 20 은 3/4 → **기본 K = 30**
+- Leave-one-out Top-5 정확도: K=10 69.6% · K=20 73.2% · K=30 74.2% · 최고 74.9% (K = 34)
+- 모의 휴대폰 사진(카탈로그 사진을 확대·회색 배경·좌우반전) 40장: 좌우 자동맞춤 없이 52.5% → 있으면 92.5% 정답
+- 팀원 브랜치 참고: 카탈로그 위치 맞추기·좌우반전·EXIF 회전·빠른 LOO 계산(구가현), magick 전처리(조가희)
 
 ## 4. Our Shoes 사진 추가
 `our_shoes/` 에 `이름_카테고리_번호.jpg` (예: `Whae_Sandals_1.jpg`). 카테고리는 Boots/Sandals/Shoes/Slippers (단수형도 인식). 규칙에 안 맞는 파일은 화면에 경고로 표시.
