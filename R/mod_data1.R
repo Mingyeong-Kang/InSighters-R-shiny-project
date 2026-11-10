@@ -8,17 +8,10 @@ data1UI <- function(id) {
   tagList(
     page_header("Tab 4 · Project 1 dataset", "Data 1 — University Commercial Districts",
                 "이화여대 · 숙명여대 · 성신여대 주변 상권을 기술통계(filter, sort, count, mean, median, rate, group summary)로 비교합니다."),
-    div(class = "mode-row",
-        div(class = "segmented",
-            radioButtons(ns("mode"), NULL, c("Real data" = "real", "Demo mode" = "demo"), inline = TRUE)),
-        span(class = "hint", "Demo mode 는 UI 시연용 가상 데이터이며 분석 결과가 아닙니다.")),
+    radioButtons(ns("mode"), NULL, c("Real data" = "real", "Demo mode" = "demo"), inline = TRUE),
+    hint("Demo mode 는 UI 시연용 가상 데이터이며 분석 결과가 아닙니다."),
     uiOutput(ns("body"))
   )
-}
-
-univ_legend <- function() {
-  div(class = "univ-legend", lapply(names(UNIV_COLORS), function(k)
-    span(class = "univ-key", span(class = "dot", style = sprintf("background:%s", UNIV_COLORS[[k]])), UNIV_LABELS[[k]])))
 }
 
 data1Server <- function(id) {
@@ -33,57 +26,55 @@ data1Server <- function(id) {
       st <- state()
       if (!isTRUE(st$ok)) {
         return(tagList(
-          div(class = "not-connected",
-              div(class = "nc-badge", "● Dataset Not Connected"),
-              h3("Project 1 최종 데이터셋이 아직 연결되지 않았습니다"),
+          card(class = "border-warning mt-3",
+            card_header(span(class = "badge text-bg-warning", "● Dataset Not Connected")),
+            card_body(
+              h4("Project 1 최종 데이터셋이 아직 연결되지 않았습니다"),
               p(st$reason),
               tags$ol(
                 tags$li(HTML("최종 CSV 를 <code>data1/data1.csv</code> 로 저장합니다.")),
                 tags$li(HTML("<code>data1/data1_config.R</code> 에서 university / period / industry / metrics 컬럼 이름을 실제 이름으로 바꿉니다.")),
                 tags$li("앱을 다시 실행하면 필터·그래프·요약 통계가 실제 데이터로 갱신됩니다.")),
-              p(class = "hint", "실제 데이터 없이 숫자를 표시하지 않습니다. 화면 구성을 보려면 위의 Demo mode 를 선택하세요.")),
-          div(class = "skeleton-grid", lapply(1:3, function(i)
-            div(class = "p-card skeleton", div(class = "sk-line w60"), div(class = "sk-line w40"),
-                div(class = "sk-block"))))))
+              hint("실제 데이터 없이 숫자를 표시하지 않습니다. 화면 구성을 보려면 위의 Demo mode 를 선택하세요.")))))
       }
       periods <- if (st$has$period) sort(unique(st$df$.period)) else NULL
       inds <- if (st$has$industry) sort(unique(st$df$.industry)) else NULL
       tagList(
-        if (st$demo) div(class = "demo-banner", role = "alert", "DEMO DATA — NOT ACTUAL RESULTS"),
+        if (st$demo) div(class = "alert alert-warning text-center fw-bold fs-5 mt-2", role = "alert",
+                         "⚠️ DEMO DATA — NOT ACTUAL RESULTS"),
         if (!st$demo && isTRUE(st$unmatched > 0))
-          div(class = "alert-soft", sprintf("university 값이 매핑되지 않은 %d행은 제외되었습니다 (data1_config.R 의 DATA1_UNIV_VALUES 확인).", st$unmatched)),
+          notice(sprintf("university 값이 매핑되지 않은 %d행은 제외되었습니다 (data1_config.R 의 DATA1_UNIV_VALUES 확인).", st$unmatched)),
         layout_columns(col_widths = breakpoints(sm = 12, lg = c(3, 9)),
-          div(class = "sticky-col",
+          div(
             ui_card("Filters", icon = "⚙️",
               checkboxGroupInput(ns("univ"), "University",
-                                 choiceNames = lapply(names(UNIV_COLORS), function(k)
-                                   span(span(class = "dot", style = sprintf("background:%s", UNIV_COLORS[[k]])), UNIV_LABELS[[k]])),
+                                 choiceNames = unname(UNIV_LABELS[names(UNIV_COLORS)]),
                                  choiceValues = names(UNIV_COLORS), selected = names(UNIV_COLORS)),
               if (!is.null(periods)) {
                 if (is.numeric(periods)) sliderInput(ns("period"), "Period", min(periods), max(periods),
                                                      range(periods), step = 1, sep = "")
                 else selectInput(ns("period_sel"), "Period", periods, periods, multiple = TRUE)
-              } else div(class = "unsupported", "Period — 미지원 (컬럼 미매핑)"),
+              } else hint("🚫 Period — 미지원 (컬럼 미매핑)"),
               if (!is.null(inds)) selectInput(ns("industry"), "Industry", inds, inds, multiple = TRUE)
-              else div(class = "unsupported", "Industry — 미지원 (컬럼 미매핑)"),
+              else hint("🚫 Industry — 미지원 (컬럼 미매핑)"),
               selectInput(ns("metric"), "Metric", stats::setNames(st$metrics, st$labels)),
               radioButtons(ns("stat"), "Statistic", c("Mean" = "mean", "Median" = "median", "Sum" = "sum", "Count" = "count"),
                            inline = TRUE),
-              actionButton(ns("reset"), "↺ Reset filters", class = "btn-ghost w-100"))),
+              actionButton(ns("reset"), "↺ Reset filters", class = "btn-outline-secondary w-100"))),
           div(
             uiOutput(ns("kpis")),
             layout_columns(col_widths = breakpoints(sm = 12, lg = c(6, 6)),
               ui_card("By university", icon = "🏫", plotly::plotlyOutput(ns("p_univ"), height = "300px")),
               ui_card("By industry", icon = "🏪",
                       if (st$has$industry) plotly::plotlyOutput(ns("p_ind"), height = "300px")
-                      else div(class = "unsupported", "업종 컬럼이 매핑되지 않아 미지원"))),
+                      else hint("🚫 업종 컬럼이 매핑되지 않아 미지원"))),
             ui_card("Trend over period", icon = "📈",
                     if (st$has$period) plotly::plotlyOutput(ns("p_trend"), height = "300px")
-                    else div(class = "unsupported", "기간 컬럼이 매핑되지 않아 미지원")),
+                    else hint("🚫 기간 컬럼이 매핑되지 않아 미지원")),
             ui_card("Group summary table", icon = "📋",
-                    header_right = downloadButton(ns("dl"), "CSV", class = "btn-ghost btn-sm"),
+                    header_right = downloadButton(ns("dl"), "CSV", class = "btn-outline-primary btn-sm"),
                     DT::DTOutput(ns("table"))),
-            h4(class = "sub-head", "Three descriptive findings"),
+            h4(class = "fw-bold mt-3", "Three descriptive findings"),
             uiOutput(ns("analyses"))))
       )
     })
@@ -120,16 +111,17 @@ data1Server <- function(id) {
       d <- filtered(); m <- metric(); st <- state()
       if (!nrow(d)) return(empty_state("필터 조건에 맞는 데이터가 없습니다", p("필터를 넓히거나 초기화하세요."), icon = "🔍"))
       gs <- group_summary(d, m)
-      div(class = "kpi-row univ",
+      # 대학별 요약 카드: 대학 고정 컬러를 value_box 테마(R 인자)로 지정
+      do.call(layout_column_wrap, c(list(width = "220px", fill = FALSE),
           lapply(seq_len(nrow(gs)), function(i) {
             k <- gs$group[i]
-            div(class = "kpi univ-kpi", style = sprintf("--univ:%s", UNIV_COLORS[[k]]),
-                span(class = "kpi-label", UNIV_LABELS[[k]]),
-                span(class = "kpi-value", format(round(if ((input$stat %||% "mean") == "count") gs$n[i]
-                                                       else gs[[input$stat %||% "mean"]][i], 2), big.mark = ",")),
-                span(class = "kpi-sub", sprintf("%s of %s · n = %d · share %.1f%%", stat_label(),
-                                                st$labels[[m]], gs$n[i], gs$share_pct[i])))
-          }))
+            val <- if ((input$stat %||% "mean") == "count") gs$n[i] else gs[[input$stat %||% "mean"]][i]
+            value_box(
+              title = UNIV_LABELS[[k]],
+              value = format(round(val, 2), big.mark = ","),
+              p(sprintf("%s of %s · n = %d · share %.1f%%", stat_label(), st$labels[[m]], gs$n[i], gs$share_pct[i])),
+              theme = value_box_theme(bg = UNIV_COLORS[[k]], fg = "#FFFFFF"))
+          })))
     })
 
     base_layout <- function(p, ytitle) {
@@ -209,16 +201,15 @@ data1Server <- function(id) {
                           paste(input$univ, collapse = ", "),
                           if (!is.null(input$period)) sprintf(" · Period %s–%s", input$period[1], input$period[2]) else "",
                           if (!is.null(input$industry)) sprintf(" · Industries: %d selected", length(input$industry)) else "")
-      div(class = "analysis-grid", lapply(an, function(a) {
+      do.call(layout_column_wrap, c(list(width = "300px", fill = FALSE), lapply(an, function(a) {
         has_metric <- !is.na(a$metric %||% NA) && a$metric %in% st$metrics
         nums <- if (has_metric && nrow(d)) {
           gs <- group_summary(d, a$metric)
           val <- if (a$stat == "count") gs$n else gs[[a$stat]]
-          tags$ul(class = "num-list", lapply(seq_len(nrow(gs)), function(i)
-            tags$li(span(class = "dot", style = sprintf("background:%s", UNIV_COLORS[[gs$group[i]]])),
-                    sprintf("%s: %s", UNIV_LABELS[[gs$group[i]]], format(round(val[i], 2), big.mark = ",")))))
-        } else div(class = "unsupported", "지표가 설정되지 않음 (data1_config.R 의 metric)")
-        ui_card(a$title, class = "analysis-card",
+          tags$ul(lapply(seq_len(nrow(gs)), function(i)
+            tags$li(sprintf("%s: %s", UNIV_LABELS[[gs$group[i]]], format(round(val[i], 2), big.mark = ",")))))
+        } else hint("🚫 지표가 설정되지 않음 (data1_config.R 의 metric)")
+        ui_card(a$title,
                 tags$dl(
                   tags$dt("Question"), tags$dd(a$question),
                   tags$dt("Inputs (current filters)"), tags$dd(filt_txt),
@@ -226,7 +217,7 @@ data1Server <- function(id) {
                   tags$dd(nums),
                   tags$dt("Why it matters"), tags$dd(a$interpretation),
                   tags$dt("Next analysis"), tags$dd(a$next_step)))
-      }))
+      })))
     })
   })
 }

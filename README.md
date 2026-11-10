@@ -20,7 +20,6 @@ P2_students 2/                 ← 교수님 zip 을 푼 폴더 = 프로젝트 �
 │   ├── mod_our_shoes.R        # Tab 3
 │   ├── mod_data1.R            # Tab 4
 │   └── mod_ai.R               # Tab 5
-├── www/styles.css, app.js     # 디자인 시스템, 로딩바, 이미지 확대, 스텝 내비
 ├── scripts/precompute_pca.R   # PCA 사전계산 + 정확성 검증 → data/pca_cache.rds
 ├── data/pca_cache.rds         # (생성됨) 캐시
 ├── data1/data1_config.R       # ★ Data 1 컬럼 매핑 / 분석 3개
@@ -29,6 +28,9 @@ P2_students 2/                 ← 교수님 zip 을 푼 폴더 = 프로젝트 �
 ├── shoes/ shoes_meta.csv selfcheck/   # 수업 제공 데이터 (git 에 올리지 않음)
 └── .gitignore
 ```
+
+## UI 원칙
+CSS/JS 파일 없이 **R 코드(shiny + bslib)로만** UI 를 만든다. 색·폰트·모서리는 `app.R` 의 `bs_theme()` 인자, 레이아웃은 `layout_sidebar` / `layout_column_wrap` / `card` / `navset_*` / `value_box`, 클래스는 Bootstrap 기본 유틸리티만 사용. `style=`, `tags$style`, `tags$script`, `onclick`, `conditionalPanel` 사용 금지.
 
 ## 2. 설치 · 실행
 
@@ -88,7 +90,7 @@ Demo mode 는 가상 데이터이며 화면·CSV 모두 `DEMO DATA — NOT ACTUA
 
 ## 7. 배포 (shinyapps.io)
 ```r
-rsconnect::deployApp(appFiles = c("app.R", "R", "www", "data", "data1", "our_shoes",
+rsconnect::deployApp(appFiles = c("app.R", "R", "data", "data1", "our_shoes",
                                   "shoes", "shoes_meta.csv", "selfcheck"))
 ```
 - 앱이 데이터를 읽어야 하므로 배포 번들에는 포함되지만, **GitHub 저장소와 제출 zip 에는 신발 데이터를 넣지 않습니다** (`.gitignore`). 신발 사진은 수업 외 사용/공유 금지.

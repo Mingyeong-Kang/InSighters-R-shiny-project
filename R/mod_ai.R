@@ -8,19 +8,19 @@ aiUI <- function(id) {
     page_header("Tab 5 · Responsible AI use", "AI",
                 "AI 사용 원칙에 대한 팀의 서약, 각 탭에서 AI 와 팀이 한 일, 팀원별 회고입니다."),
     ui_card("Ethics statement", icon = "📜",
-      tags$blockquote(class = "ethics", AI_ETHICS_STATEMENT),
+      tags$blockquote(class = "blockquote border-start border-4 border-primary ps-3 fst-italic fs-6",
+                      AI_ETHICS_STATEMENT),
       h5("Signed"),
-      div(class = "sign-row", lapply(seq_len(nrow(TEAM_MEMBERS)), function(i) {
+      div(class = "d-flex flex-wrap gap-2", lapply(seq_len(nrow(TEAM_MEMBERS)), function(i) {
         m <- TEAM_MEMBERS[i, ]
-        div(class = paste("sign-chip", if (m$signed) "signed" else "pending"),
-            span(class = "sign-mark", if (m$signed) "✓" else "…"),
-            span(m$name), span(class = "sign-status", if (m$signed) "signed" else "pending"))
+        span(class = paste("badge fs-6", if (m$signed) "text-bg-success" else "text-bg-secondary"),
+             paste(if (m$signed) "✓" else "…", m$name, if (m$signed) "· signed" else "· pending"))
       })),
-      p(class = "hint", "각 팀원이 서약문을 읽고 동의한 뒤 R/config.R 의 TEAM_MEMBERS$signed 를 TRUE 로 바꿉니다.")),
+      hint("각 팀원이 서약문을 읽고 동의한 뒤 R/config.R 의 TEAM_MEMBERS$signed 를 TRUE 로 바꿉니다.")),
     ui_card("What AI did and what we did", icon = "🤝",
-            div(class = "table-wrap", tableOutput(ns("ai_table")))),
+            div(class = "table-responsive", tableOutput(ns("ai_table")))),
     ui_card("Reflection", icon = "💭",
-            div(class = "table-wrap", tableOutput(ns("ai_reflection"))))
+            div(class = "table-responsive", tableOutput(ns("ai_reflection"))))
   )
 }
 

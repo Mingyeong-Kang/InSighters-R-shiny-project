@@ -36,66 +36,55 @@ shoeSearchUI <- function(id) {
   ns <- NS(id)
   sc <- list_selfcheck()
   sc_choices_names <- lapply(seq_len(nrow(sc)), function(i) {
-    div(class = "sc-option",
-        tags$img(src = gray_uri(mat_to_vec(preprocess_photo(file.path(PATH_SELFCHECK, sc$photo[i]), crop = FALSE))),
-                 width = 64, height = 64, alt = sc$photo[i]),
-        span(sub("\\.[a-z]+$", "", sc$photo[i])))
+    span(tags$img(src = gray_uri(mat_to_vec(preprocess_photo(file.path(PATH_SELFCHECK, sc$photo[i]), crop = FALSE)),
+                                 scale = 2),
+                  width = 64, height = 64, alt = sc$photo[i], class = "border rounded"),
+         sub("\\.[a-z]+$", "", sc$photo[i]))
   })
 
   tagList(
     page_header("Tab 1 · PCA image search", "Shoe Search",
                 "신발 사진 한 장을 고르면, 2,000장 카탈로그를 PCA 공간에 투영해 가장 가까운 신발 5개를 찾고 카테고리를 예측합니다."),
-    layout_columns(
-      col_widths = breakpoints(sm = 12, lg = c(4, 8)),
-
-      # ---------------- 입력 패널 ----------------
-      div(class = "sticky-col",
-        ui_card("1 · Choose a photo", icon = "📷",
-          div(class = "segmented",
-              radioButtons(ns("src"), NULL, c("Catalogue", "Self-check", "Upload"), inline = TRUE)),
-
-          conditionalPanel("input.src == 'Catalogue'", ns = ns,
-            div(class = "id-row",
+    layout_sidebar(
+      fillable = FALSE,
+      sidebar = sidebar(
+        width = 360, title = "📷 Choose a photo",
+        # 입력 방법 3가지: 탭(nav)으로 전환 — 선택한 탭 이름이 input$src 가 된다
+        navset_pill(
+          id = ns("src"),
+          nav_panel("Catalogue",
+            div(class = "pt-2",
                 numericInput(ns("cat_id"), "Catalogue id (1–2000)", 1, 1, 2000, step = 1),
-                actionButton(ns("random"), "🎲 Random", class = "btn-ghost")),
-            p(class = "hint", "검색할 때 이 사진 자체는 결과에서 제외됩니다.")),
-
-          conditionalPanel("input.src == 'Self-check'", ns = ns,
-            if (nrow(sc) == 0) empty_state("selfcheck 폴더가 비어 있어요",
-                                           p("selfcheck/ 폴더에 사진과 labels.csv 를 넣어 주세요."))
-            else div(class = "sc-picker",
-                     radioButtons(ns("sc_file"), "Self-check photo", choiceNames = sc_choices_names,
-                                  choiceValues = sc$photo, inline = TRUE),
-                     if (!identical(attr(sc, "status"), "ok"))
-                       div(class = "alert-soft", attr(sc, "status"))
-                     else p(class = "hint", "정답 라벨: selfcheck/labels.csv"))),
-
-          conditionalPanel("input.src == 'Upload'", ns = ns,
-            div(class = "dropzone",
-                fileInput(ns("photo"), NULL, accept = c(".jpg", ".jpeg", ".png"),
-                          buttonLabel = "Browse…", placeholder = "또는 여기로 사진을 끌어다 놓으세요"),
-                p(class = "hint", "JPG / PNG · 자동으로 흑백 변환 → 신발 영역 자르기 → 64×64")),
-            checkboxInput(ns("autocrop"), "배경 제거 · 신발 영역 자동 자르기 (권장)", TRUE),
-            checkboxInput(ns("autoflip"), "좌우 방향 자동 맞춤 (앞코 방향이 반대인 사진 대비)", TRUE),
-            selectInput(ns("upload_truth"), "실제 카테고리 (알고 있다면)",
-                        c("Unknown" = "", CATEGORIES)),
-            uiOutput(ns("upload_preview")))
+                actionButton(ns("random"), "🎲 Random id", class = "btn-outline-primary btn-sm"),
+                hint("검색할 때 이 사진 자체는 결과에서 제외됩니다."))),
+          nav_panel("Self-check",
+            div(class = "pt-2",
+                if (nrow(sc) == 0) notice("selfcheck/ 폴더에 사진과 labels.csv 를 넣어 주세요.")
+                else tagList(
+                  radioButtons(ns("sc_file"), "Self-check photo", choiceNames = sc_choices_names,
+                               choiceValues = sc$photo),
+                  if (!identical(attr(sc, "status"), "ok")) notice(attr(sc, "status"))
+                  else hint("정답 라벨: selfcheck/labels.csv")))),
+          nav_panel("Upload",
+            div(class = "pt-2",
+                fileInput(ns("photo"), "JPG / PNG (끌어다 놓기 가능)", accept = c(".jpg", ".jpeg", ".png"),
+                          buttonLabel = "Browse…", placeholder = "사진을 선택하세요"),
+                checkboxInput(ns("autocrop"), "배경 제거 · 신발 영역 자동 자르기 (권장)", TRUE),
+                checkboxInput(ns("autoflip"), "좌우 방향 자동 맞춤", TRUE),
+                selectInput(ns("upload_truth"), "실제 카테고리 (알고 있다면)", c("Unknown" = "", CATEGORIES)),
+                uiOutput(ns("upload_preview"))))
         ),
-        ui_card("2 · Number of PCs", icon = "🎚️",
-          sliderInput(ns("K"), "Number of PCs (K)", 1, K_MAX, K_DEFAULT, step = 1, ticks = FALSE),
-          uiOutput(ns("k_info")),
-          div(class = "btn-row",
-              actionButton(ns("reset"), "↺ Reset", class = "btn-ghost")))
+        hr(),
+        sliderInput(ns("K"), "Number of PCs (K)", 1, K_MAX, K_DEFAULT, step = 1, ticks = FALSE),
+        uiOutput(ns("k_info")),
+        actionButton(ns("reset"), "↺ Reset", class = "btn-outline-secondary")
       ),
 
-      # ---------------- 결과 패널 ----------------
-      div(
-        ui_card("Search result", icon = "🔎",
-                header_right = downloadButton(ns("dl_top5"), "Top 5 CSV", class = "btn-ghost btn-sm"),
-                uiOutput(ns("result"))),
-        ui_card("Top 5 table", icon = "📋", class = "compact",
-                tableOutput(ns("top5_table")))
-      )
+      # ---------------- 결과 ----------------
+      ui_card("Search result", icon = "🔎",
+              header_right = downloadButton(ns("dl_top5"), "Top 5 CSV", class = "btn-outline-primary btn-sm"),
+              uiOutput(ns("result"))),
+      ui_card("Top 5 table", icon = "📋", tableOutput(ns("top5_table")))
     )
   )
 }
@@ -109,7 +98,7 @@ shoeSearchServer <- function(id, pca) {
       updateNumericInput(session, "cat_id", value = sample(pca$meta$id, 1))
     })
     observeEvent(input$reset, {
-      updateRadioButtons(session, "src", selected = "Catalogue")
+      nav_select("src", "Catalogue", session = session)
       updateNumericInput(session, "cat_id", value = 1)
       updateSliderInput(session, "K", value = K_DEFAULT)
       updateCheckboxInput(session, "autocrop", value = TRUE)
@@ -172,16 +161,18 @@ shoeSearchServer <- function(id, pca) {
       orig <- tryCatch(base64enc::dataURI(file = input$photo$datapath,
                                           mime = if (grepl("png$", tolower(input$photo$name))) "image/png" else "image/jpeg"),
                        error = function(e) NULL)
-      div(class = "upload-preview fade-in",
-          div(tags$img(src = orig, class = "orig zoomable", alt = "original"), span("Original")),
-          span(class = "arrow", "→"),
-          div(shoe_img(gray_uri(x), "processed", 96),
-              span(if (isTRUE(s$flipped)) "64×64 gray · mirrored" else "64×64 gray (PCA input)")))
+      layout_columns(col_widths = c(6, 6),
+          div(class = "text-center small text-muted",
+              tags$img(src = orig, alt = "original", height = 96, class = "img-fluid border rounded"),
+              div("Original")),
+          div(class = "text-center small text-muted",
+              shoe_img(gray_uri(x, scale = 2), "processed", 96),
+              div(if (isTRUE(s$flipped)) "64×64 gray · mirrored" else "64×64 gray (PCA input)")))
     })
 
     output$k_info <- renderUI({
       k <- K()
-      p(class = "hint",
+      hint(
         HTML(sprintf("PC 1–%d 이 전체 분산의 <b>%.1f%%</b> 를 설명합니다. 4,096개 픽셀 대신 %d개의 숫자로 비교합니다.",
                      k, 100 * pca$cum_ratio[k], k)))
     })

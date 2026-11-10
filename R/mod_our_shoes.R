@@ -57,32 +57,28 @@ ourShoesServer <- function(id, pca, search) {
       }
       skipped <- attr(shoes, "skipped")
       tagList(
-        if (length(skipped)) div(class = "alert-soft",
+        if (length(skipped)) notice(
           sprintf("파일 이름 규칙에 맞지 않아 제외된 파일: %s", paste(skipped, collapse = ", "))),
         layout_columns(col_widths = breakpoints(sm = 12, lg = c(5, 7)),
           ui_card("Gallery", icon = "🖼️",
-            subtitle = sprintf("%d명 · %d장 — 사진을 클릭하거나 아래 목록에서 선택",
+            subtitle = sprintf("%d명 · %d장 — 사진을 골라 선택하세요",
                                length(unique(shoes$member)), nrow(shoes)),
-            div(class = "filter-row",
+            layout_columns(col_widths = c(5, 5, 2),
                 selectInput(ns("member"), "Member", c("All", unique(shoes$member))),
                 selectInput(ns("cat"), "Category", c("All", CATEGORIES)),
-                actionButton(ns("reset"), "↺", class = "btn-ghost btn-icon", title = "Reset filters")),
-            selectInput(ns("pick"), "Choose a shoe", shoes$file, width = "100%"),
+                div(class = "pt-4", actionButton(ns("reset"), "↺", class = "btn-outline-secondary",
+                                                 title = "Reset filters"))),
             uiOutput(ns("gallery"))),
           div(
             ui_card("Result", icon = "🔎", subtitle = "Shoe Search 탭의 K 값을 공유합니다",
                     uiOutput(ns("result"))),
-            ui_card("Team summary", icon = "📊", class = "compact",
-                    uiOutput(ns("summary")))))
+            ui_card("Team summary", icon = "📊", uiOutput(ns("summary")))))
       )
     })
 
     observeEvent(input$reset, {
       updateSelectInput(session, "member", selected = "All")
       updateSelectInput(session, "cat", selected = "All")
-    })
-    observeEvent(input$card_click, {
-      updateSelectInput(session, "pick", selected = input$card_click)
     })
 
     filtered <- reactive({
@@ -92,27 +88,22 @@ ourShoesServer <- function(id, pca, search) {
       d
     })
 
+    # 갤러리 = 선택 위젯: 사진·이름·카테고리를 라벨로 가진 radioButtons
     output$gallery <- renderUI({
       d <- filtered()
       if (!nrow(d)) return(empty_state("조건에 맞는 사진이 없습니다", p("필터를 초기화해 보세요."), icon = "🔍"))
-      groups <- split(d, d$member)
-      tagList(lapply(names(groups), function(m) {
-        g <- groups[[m]]
-        div(class = "member-group",
-            h5(class = "member-name", m),
-            div(class = "our-grid",
-                lapply(seq_len(nrow(g)), function(i) {
-                  f <- g$file[i]; v <- vecs[[f]]
-                  tags$button(type = "button",
-                    class = paste("our-card", if (identical(f, input$pick)) "selected"),
-                    onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})", ns("card_click"), f),
-                    `aria-label` = paste("Select", f),
-                    if (!is.null(v)) tags$img(src = gray_uri(v), width = 88, height = 88, alt = f)
-                    else div(class = "img-missing", "?"),
-                    span(class = "fname", f),
-                    cat_chip(g$category[i] %||% "Unknown"))
-                })))
-      }))
+      current <- isolate(input$pick)
+      labels <- lapply(seq_len(nrow(d)), function(i) {
+        f <- d$file[i]; v <- vecs[[f]]
+        span(if (!is.null(v)) tags$img(src = gray_uri(v, scale = 2), width = 88, height = 88, alt = f,
+                                       class = "border rounded")
+             else span(class = "badge text-bg-secondary", "읽기 실패"),
+             strong(d$member[i]), cat_chip(d$category[i] %||% "Unknown"),
+             span(class = "small text-muted", f))
+      })
+      radioButtons(ns("pick"), "Choose a shoe", choiceNames = labels, choiceValues = d$file,
+                   selected = if (!is.null(current) && current %in% d$file) current else d$file[1],
+                   width = "100%")
     })
 
     output$result <- renderUI({
@@ -132,13 +123,12 @@ ourShoesServer <- function(id, pca, search) {
       ok <- !is.na(preds) & !is.na(shoes$category)
       acc <- if (any(ok)) mean(preds[ok] == shoes$category[ok]) else NA
       tagList(
-        div(class = "kpi-row",
-            div(class = "kpi", span(class = "kpi-label", "Photos"), span(class = "kpi-value", nrow(shoes))),
-            div(class = "kpi", span(class = "kpi-label", "Correct"),
-                span(class = "kpi-value", sprintf("%d / %d", sum(preds[ok] == shoes$category[ok]), sum(ok)))),
-            div(class = "kpi", span(class = "kpi-label", sprintf("Accuracy (K=%d)", K)),
-                span(class = "kpi-value", if (is.na(acc)) "—" else sprintf("%.0f%%", 100 * acc)))),
-        tags$table(class = "table table-sm mini-table",
+        layout_column_wrap(width = "160px", fill = FALSE,
+            value_box("Photos", nrow(shoes), theme = "light"),
+            value_box("Correct", sprintf("%d / %d", sum(preds[ok] == shoes$category[ok]), sum(ok)), theme = "light"),
+            value_box(sprintf("Accuracy (K=%d)", K), if (is.na(acc)) "—" else sprintf("%.0f%%", 100 * acc),
+                      theme = "primary")),
+        tags$table(class = "table table-sm",
           tags$thead(tags$tr(tags$th("Photo"), tags$th("Actual"), tags$th("Predicted"), tags$th(""))),
           tags$tbody(lapply(seq_along(preds), function(i) tags$tr(
             tags$td(shoes$file[i]), tags$td(shoes$category[i]), tags$td(preds[i]),
