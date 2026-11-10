@@ -10,3 +10,11 @@ our_shoes/*
 .RData
 .Rproj.user/
 rsconnect/
+*.Rproj
+.DS_Store
+manifest.json
+shoes/
+selfcheck/
+shoes_meta.csv
+labels.csv
+data/pca_cache.rds

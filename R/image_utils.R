@@ -45,16 +45,32 @@ resize_area <- function(m, out_h, out_w) {
     pmin(w, ceiling(seq_len(out_w) * w / out_w)), drop = FALSE]
 }
 
+# 휴대폰 사진 읽기: magick 이 있으면 EXIF 회전 정보대로 바로 세우고(세로 사진이 눕는 문제 방지),
+# 투명 배경은 흰색으로 채우고, 계산이 빠르도록 긴 변을 800px 이하로 줄인다.
+# (팀원 구가현·조가희 브랜치의 magick 전처리 아이디어를 반영)
+read_photo_gray <- function(path) {
+  if (!requireNamespace("magick", quietly = TRUE)) return(read_gray(path))
+  img <- magick::image_read(path)[1]
+  img <- magick::image_orient(img)
+  img <- magick::image_flatten(magick::image_background(img, "white"))
+  img <- magick::image_scale(img, "800x800>")
+  a <- as.integer(magick::image_data(img, channels = "gray"))[, , 1]   # [height, width]
+  a / 255
+}
+
 # 새 사진 -> 카탈로그와 같은 64x64 형식
-#  1) 흑백 변환  2) 테두리 픽셀의 중앙값을 배경으로 추정, 어두운 배경이면 반전
-#  3) 배경이 1(흰색)이 되도록 밝기 보정  4) 신발 영역(bounding box) 자르기
-#  5) 흰 여백으로 정사각형 패딩  6) 64x64 면적 평균 축소
-preprocess_photo <- function(path, crop = TRUE, margin = 0.04) {
-  g <- read_gray(path)
+#  1) 흑백 변환 (EXIF 회전 보정)
+#  2) 테두리 픽셀의 중앙값을 배경으로 추정, 어두운 배경이면 반전
+#  3) 배경이 1(흰색)이 되도록 밝기 보정
+#  4) 신발 영역(bounding box) 자르기
+#  5) 카탈로그와 같은 자리에 배치: 비율을 유지한 채 62 x 47 상자에 맞추고,
+#     가로 가운데 + 바닥을 55번째 줄에 맞춤 (실제 카탈로그 2,000장 측정값, config.R)
+preprocess_photo <- function(path, crop = TRUE) {
+  g <- if (crop) read_photo_gray(path) else read_gray(path)
   h <- nrow(g); w <- ncol(g)
-  if (h == IMG_SIZE && w == IMG_SIZE && !crop) return(g)
-  border <- c(g[1:max(1, h %/% 50), ], g[h - 0:max(0, h %/% 50 - 1), ],
-              g[, 1:max(1, w %/% 50)], g[, w - 0:max(0, w %/% 50 - 1)])
+  if (h == IMG_SIZE && w == IMG_SIZE && !crop) return(g)     # selfcheck: 이미 카탈로그 형식
+  b <- max(1, min(h, w) %/% 50)
+  border <- c(g[seq_len(b), ], g[h - seq_len(b) + 1, ], g[, seq_len(b)], g[, w - seq_len(b) + 1])
   bg <- stats::median(border)
   if (bg < 0.5) { g <- 1 - g; bg <- 1 - bg }
   g <- clamp(g / max(bg, 0.05))                        # 배경 -> 1
@@ -66,14 +82,24 @@ preprocess_photo <- function(path, crop = TRUE, margin = 0.04) {
       g <- g[min(rows):max(rows), min(cols):max(cols), drop = FALSE]
     }
   }
-  # 정사각형 + 여백
-  s <- max(dim(g)); s <- ceiling(s * (1 + 2 * margin))
-  canvas <- matrix(1, s, s)
-  r0 <- (s - nrow(g)) %/% 2; c0 <- (s - ncol(g)) %/% 2
-  canvas[r0 + seq_len(nrow(g)), c0 + seq_len(ncol(g))] <- g
-  out <- resize_area(canvas, IMG_SIZE, IMG_SIZE)
-  clamp(out)
+  place_like_catalogue(g)
 }
+
+# 잘라낸 신발 이미지를 64x64 흰 도화지의 카탈로그 위치에 놓기
+place_like_catalogue <- function(g, box_w = CAT_BOX_W, box_h = CAT_BOX_H, bottom = CAT_BOTTOM_ROW) {
+  s  <- min(box_w / ncol(g), box_h / nrow(g))
+  nh <- max(1, min(box_h, round(nrow(g) * s)))
+  nw <- max(1, min(box_w, round(ncol(g) * s)))
+  small  <- resize_area(g, nh, nw)
+  canvas <- matrix(1, IMG_SIZE, IMG_SIZE)
+  r0 <- bottom - nh                      # 바닥 줄 = r0 + nh
+  c0 <- (IMG_SIZE - nw) %/% 2
+  canvas[r0 + seq_len(nh), c0 + seq_len(nw)] <- small
+  clamp(canvas)
+}
+
+# 좌우 반전 (카탈로그 신발은 대부분 앞코가 오른쪽). 4,096 벡터 -> 4,096 벡터
+mirror_vec <- function(v) mat_to_vec(vec_to_mat(v)[, IMG_SIZE:1])
 
 # ---- 화면 표시: 행렬 -> PNG data URI ---------------------------------------
 png_uri <- function(arr) {

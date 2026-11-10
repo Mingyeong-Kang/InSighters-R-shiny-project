@@ -3,14 +3,33 @@
 # 반환값: list(selected = reactive(쿼리 정보), K = reactive(K))  -> 다른 탭과 공유
 # =============================================================================
 
-list_selfcheck <- function() {
-  lab_path <- file.path(PATH_SELFCHECK, "labels.csv")
-  files <- sort(list.files(PATH_SELFCHECK, pattern = "\\.(png|jpe?g)$", ignore.case = TRUE))
-  labels <- if (file.exists(lab_path)) utils::read.csv(lab_path, stringsAsFactors = FALSE) else
-    data.frame(photo = character(), category = character())
-  data.frame(photo = files,
-             category = labels$category[match(files, labels$photo)],
-             stringsAsFactors = FALSE)
+# selfcheck 사진 목록 + 정답 라벨 (과제 제공 selfcheck/labels.csv: 컬럼 photo, category)
+# - BOM / CRLF 줄바꿈 / 앞뒤 공백 / 대소문자 차이가 있어도 파일명으로 정확히 매칭
+# - labels.csv 가 없거나 컬럼이 다르면 status 에 이유를 담아 화면에 안내 (라벨을 추측하지 않음)
+list_selfcheck <- function(dir = PATH_SELFCHECK) {
+  files <- sort(list.files(dir, pattern = "\\.(png|jpe?g)$", ignore.case = TRUE))
+  out <- data.frame(photo = files, category = NA_character_, stringsAsFactors = FALSE)
+  lab_path <- file.path(dir, "labels.csv")
+  if (!file.exists(lab_path)) {
+    attr(out, "status") <- sprintf("'%s' 파일이 없어 실제 카테고리를 표시할 수 없습니다.", lab_path)
+    return(out)
+  }
+  lab <- tryCatch(utils::read.csv(lab_path, stringsAsFactors = FALSE, fileEncoding = "UTF-8-BOM",
+                                  strip.white = TRUE),
+                  error = function(e) NULL)
+  if (is.null(lab)) { attr(out, "status") <- "labels.csv 를 읽을 수 없습니다."; return(out) }
+  names(lab) <- tolower(trimws(names(lab)))
+  if (!all(c("photo", "category") %in% names(lab))) {
+    attr(out, "status") <- sprintf("labels.csv 컬럼이 photo, category 가 아닙니다 (현재: %s).",
+                                   paste(names(lab), collapse = ", "))
+    return(out)
+  }
+  key <- function(x) tolower(basename(trimws(x)))
+  out$category <- trimws(lab$category)[match(key(out$photo), key(lab$photo))]
+  missing <- out$photo[is.na(out$category)]
+  attr(out, "status") <- if (length(missing))
+    sprintf("labels.csv 에 라벨이 없는 사진: %s", paste(missing, collapse = ", ")) else "ok"
+  out
 }
 
 shoeSearchUI <- function(id) {
@@ -46,7 +65,10 @@ shoeSearchUI <- function(id) {
                                            p("selfcheck/ 폴더에 사진과 labels.csv 를 넣어 주세요."))
             else div(class = "sc-picker",
                      radioButtons(ns("sc_file"), "Self-check photo", choiceNames = sc_choices_names,
-                                  choiceValues = sc$photo, inline = TRUE))),
+                                  choiceValues = sc$photo, inline = TRUE),
+                     if (!identical(attr(sc, "status"), "ok"))
+                       div(class = "alert-soft", attr(sc, "status"))
+                     else p(class = "hint", "정답 라벨: selfcheck/labels.csv"))),
 
           conditionalPanel("input.src == 'Upload'", ns = ns,
             div(class = "dropzone",
@@ -54,6 +76,7 @@ shoeSearchUI <- function(id) {
                           buttonLabel = "Browse…", placeholder = "또는 여기로 사진을 끌어다 놓으세요"),
                 p(class = "hint", "JPG / PNG · 자동으로 흑백 변환 → 신발 영역 자르기 → 64×64")),
             checkboxInput(ns("autocrop"), "배경 제거 · 신발 영역 자동 자르기 (권장)", TRUE),
+            checkboxInput(ns("autoflip"), "좌우 방향 자동 맞춤 (앞코 방향이 반대인 사진 대비)", TRUE),
             selectInput(ns("upload_truth"), "실제 카테고리 (알고 있다면)",
                         c("Unknown" = "", CATEGORIES)),
             uiOutput(ns("upload_preview")))
@@ -90,6 +113,7 @@ shoeSearchServer <- function(id, pca) {
       updateNumericInput(session, "cat_id", value = 1)
       updateSliderInput(session, "K", value = K_DEFAULT)
       updateCheckboxInput(session, "autocrop", value = TRUE)
+      updateCheckboxInput(session, "autoflip", value = TRUE)
       updateSelectInput(session, "upload_truth", selected = "")
       if (nrow(sc)) updateRadioButtons(session, "sc_file", selected = sc$photo[1])
     })
@@ -123,9 +147,15 @@ shoeSearchServer <- function(id, pca) {
         x <- tryCatch(mat_to_vec(preprocess_photo(input$photo$datapath, crop = isTRUE(input$autocrop))),
                       error = function(e) NULL)
         validate(need(!is.null(x), "이미지를 읽을 수 없습니다. JPG/PNG 파일인지 확인해 주세요."))
+        flipped <- FALSE
+        if (isTRUE(input$autoflip)) {                 # 원본/좌우반전 중 Best match 가 더 가까운 쪽
+          f <- search_auto_flip(pca, x, K())
+          x <- f$x; flipped <- f$flipped
+        }
         tr <- input$upload_truth
-        list(x = x, label = input$photo$name, truth = if (nzchar(tr %||% "")) tr else NA,
-             exclude = NULL, source = "Upload")
+        list(x = x, label = paste0(input$photo$name, if (flipped) " (mirrored)" else ""),
+             truth = if (nzchar(tr %||% "")) tr else NA,
+             exclude = NULL, source = "Upload", flipped = flipped)
       }
     })
 
@@ -135,17 +165,18 @@ shoeSearchServer <- function(id, pca) {
     })
 
     output$upload_preview <- renderUI({
-      req(input$photo)
-      x <- tryCatch(mat_to_vec(preprocess_photo(input$photo$datapath, crop = isTRUE(input$autocrop))),
-                    error = function(e) NULL)
-      if (is.null(x)) return(error_state("이미지를 읽을 수 없습니다."))
+      req(input$photo, identical(input$src, "Upload"))
+      s <- tryCatch(selected(), error = function(e) NULL)
+      if (is.null(s)) return(error_state("이미지를 읽을 수 없습니다."))
+      x <- s$x
       orig <- tryCatch(base64enc::dataURI(file = input$photo$datapath,
                                           mime = if (grepl("png$", tolower(input$photo$name))) "image/png" else "image/jpeg"),
                        error = function(e) NULL)
       div(class = "upload-preview fade-in",
           div(tags$img(src = orig, class = "orig zoomable", alt = "original"), span("Original")),
           span(class = "arrow", "→"),
-          div(shoe_img(gray_uri(x), "processed", 96), span("64×64 gray (PCA input)")))
+          div(shoe_img(gray_uri(x), "processed", 96),
+              span(if (isTRUE(s$flipped)) "64×64 gray · mirrored" else "64×64 gray (PCA input)")))
     })
 
     output$k_info <- renderUI({
