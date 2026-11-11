@@ -3,7 +3,7 @@
 # 원본(업소 1행 = 1건) → 업소 이벤트 표(events) → 동네×연도 표(build_yearly)
 # load_data1_real() 의 반환값:
 #   list(ok, reason, events, dongs, dong_labels, years, industries, cutoff, metrics,
-#        labels, colors, rate_colors, analyses, has, unmatched, bad_dates)
+#        labels, colors, rate_colors, analyses, has, unmatched, bad_dates, bad_close)
 # =============================================================================
 
 if (!exists("%||%", mode = "function"))
@@ -31,10 +31,20 @@ read_data1_raw <- function(f, cols) {
   NULL
 }
 
+# 날짜 문자열 → Date. 지원 형식: 2016-03-01 / 2016-3-1 / 2016/03/01 / 2016.03.01 / 20160301
+# (뒤에 시각이 붙어 있어도 날짜만 사용). 비어 있거나 읽을 수 없으면 NA.
 to_date_safe <- function(x) {
-  x <- trimws(x)                       # 폐업일자가 공백 문자열인 행(영업 중)이 있음
-  x[!nzchar(x)] <- NA_character_
-  as.Date(substr(x, 1, 10), format = "%Y-%m-%d")
+  x <- trimws(as.character(x))         # 폐업일자가 공백 문자열인 행(영업 중)이 있음
+  x[is.na(x) | !nzchar(x)] <- NA_character_
+  out <- as.Date(rep(NA_real_, length(x)), origin = "1970-01-01")
+  
+  compact <- !is.na(x) & grepl("^[0-9]{8}([^0-9].*)?$", x)        # YYYYMMDD
+  out[compact] <- as.Date(substr(x[compact], 1, 8), format = "%Y%m%d")
+  
+  rest <- !compact & !is.na(x)                                      # 구분자 형식
+  y <- gsub("[./]", "-", substr(x[rest], 1, 10))
+  out[rest] <- as.Date(y, format = "%Y-%m-%d")
+  out
 }
 
 # raw → 표준 events 표 (dong, industry, open, close)
@@ -42,12 +52,15 @@ standardize_data1 <- function(raw, cols, dongs, year_from = 2015) {
   has_ind <- !is.null(cols$industry) && length(cols$industry) == 1 &&
     !is.na(cols$industry) && cols$industry %in% names(raw)
   
+  close_txt <- trimws(as.character(raw[[cols$close_date]]))
   ev <- data.frame(
     dong     = trimws(raw[[cols$dong]]),
     industry = if (has_ind) trimws(raw[[cols$industry]]) else NA_character_,
     open     = to_date_safe(raw[[cols$open_date]]),
     close    = to_date_safe(raw[[cols$close_date]]),
+    close_unreadable = !is.na(close_txt) & nzchar(close_txt),   # 폐업일자에 값이 있는 행(아래에서 읽힌 행 제외)
     stringsAsFactors = FALSE)
+  ev$close_unreadable <- ev$close_unreadable & is.na(ev$close)
   if (has_ind) ev$industry[is.na(ev$industry) | !nzchar(ev$industry)] <- "(미상)"
   
   unmatched <- sum(!(ev$dong %in% dongs))
@@ -55,19 +68,22 @@ standardize_data1 <- function(raw, cols, dongs, year_from = 2015) {
   bad_dates <- sum(is.na(ev$open))                 # 개업일을 알 수 없는 행은 제외
   ev <- ev[!is.na(ev$open), , drop = FALSE]
   if (!nrow(ev)) return(list(ok = FALSE, reason = "분석 대상 동네(행정동)에 해당하는 행이 없습니다."))
+  # 폐업일자에 값은 있는데 날짜로 읽지 못한 행: '영업 중'으로 처리되어 폐업률이 낮아질 수 있음
+  bad_close <- sum(ev$close_unreadable)
+  ev$close_unreadable <- NULL
   
   last_date <- max(c(ev$open, ev$close), na.rm = TRUE)
   year_to <- as.integer(format(last_date, "%Y"))
   list(ok = TRUE, events = ev, dongs = dongs,
        years = seq.int(as.integer(year_from), year_to),
        industries = if (has_ind) sort(unique(ev$industry)) else NULL,
-       cutoff = last_date, unmatched = unmatched, bad_dates = bad_dates,
+       cutoff = last_date, unmatched = unmatched, bad_dates = bad_dates, bad_close = bad_close,
        has = list(industry = has_ind))
 }
 
 load_data1_real <- function() {
   cfg <- load_data1_config()
-  f <- cfg$DATA1_FILE %||% file.path(PATH_DATA1_DIR, "data1_raw.csv")
+  f <- cfg$DATA1_FILE %||% file.path(PATH_DATA1_DIR, "data1.csv")
   if (!file.exists(f))
     return(list(ok = FALSE, reason = sprintf("데이터 파일 '%s' 이(가) 없습니다.", f)))
   cols <- cfg$DATA1_COLUMNS

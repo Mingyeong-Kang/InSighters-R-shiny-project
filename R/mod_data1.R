@@ -38,7 +38,7 @@ data1Server <- function(id) {
                       h4("Project 1 데이터셋이 아직 연결되지 않았습니다"),
                       p(st$reason),
                       tags$ol(
-                        tags$li(HTML("원본 CSV(청파동_동선동_대현동_음식점_합본.csv)를 <code>data1/data1_raw.csv</code> 로 저장합니다.")),
+                        tags$li(HTML("원본 CSV(청파동_동선동_대현동_음식점_합본.csv)를 <code>data1/data1.csv</code> 로 저장합니다.")),
                         tags$li(HTML("<code>data1/data1_config.R</code> 에서 행정동 / 인허가일자 / 폐업일자 / 업태구분명 컬럼 이름을 확인합니다.")),
                         tags$li("앱을 다시 실행하면 필터·그래프·요약 통계가 실제 데이터로 계산됩니다.")),
                       hint("실제 데이터 없이 숫자를 표시하지 않습니다."))))
@@ -54,6 +54,8 @@ data1Server <- function(id) {
           notice(sprintf("행정동이 분석 대상 동네가 아닌 %d행은 제외되었습니다 (data1_config.R 의 DATA1_DONGS 확인).", st$unmatched)),
         if (isTRUE(st$bad_dates > 0))
           notice(sprintf("인허가일자를 읽을 수 없는 %d행은 제외되었습니다.", st$bad_dates)),
+        if (isTRUE(st$bad_close > 0))
+          notice(sprintf("폐업일자가 있지만 날짜로 읽지 못한 %d행은 '영업 중'으로 처리되어 폐업률이 낮게 나올 수 있습니다. 원본의 날짜 형식을 확인하세요.", st$bad_close)),
         layout_columns(col_widths = breakpoints(sm = 12, lg = c(3, 9)),
                        div(
                          ui_card("Filters", icon = "⚙️",
