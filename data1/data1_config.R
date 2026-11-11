@@ -29,14 +29,9 @@ DATA1_UNIV_VALUES <- c(
 #    metric 은 DATA1_COLUMNS$metrics 중 하나, stat 은 "mean","median","sum","count" 중 하나.
 #    수치 결과는 앱이 현재 필터 기준으로 자동 계산합니다.
 DATA1_ANALYSES <- list(
-  list(title = "Analysis 1", question = "TODO: 연구 질문 1",
-       metric = NA, stat = "mean",
-       interpretation = "TODO: 결과 해석 (실제 수치를 확인한 뒤 작성)",
-       next_step = "TODO: 다음 분석에 대한 시사점"),
-  list(title = "Analysis 2", question = "TODO: 연구 질문 2",
-       metric = NA, stat = "median",
-       interpretation = "TODO", next_step = "TODO"),
-  list(title = "Analysis 3", question = "TODO: 연구 질문 3",
-       metric = NA, stat = "count",
-       interpretation = "TODO", next_step = "TODO")
+  list(title = "이대 상권은 더 빠르게 줄었는가",
+    question = "주 소비층이 여대생인 이대(대현동), 숙대(청파동), 성신여대(동선동) 상권 중 이대 상권이 다른 여대 상권보다 개업률과 폐업률의 순증감을 기준으로 더 빠르게 줄었는가? (지표: 개업률, 폐업률, 순증가율 = (개업 − 폐업) / 당해 1월 1일 점포 수 × 100)",
+    metric = NA, stat = "mean", # meteric이 NA면 "지표가 설정되지 않음" 표시 → 데이터 연결 후 순증가율 컬럼명으로 지정 예정, stat는 전부 비율 지표라 sum, count는 의미가 없어서 mean사용
+    interpretation = "상권 쇠퇴는 개업률 하락 또는 폐업률 상승 중 하나로 일어나므로, 두 비율과 순증가율을 함께 보면 감소의 경로와 속도를 규모가 다른 세 상권에서 같은 기준으로 비교할 수 있다. 또한 소비자 구성이 여대생 중심으로 비슷한 세 상권 중 재학생 수가 가장 많은 이대만 더 빠르게 줄었다면, 이는 학생 수가 아닌 임대료, 유동인구 변화, 정부 정책의 변화 등에서 비롯됐을 가능성이 크다.",
+    next_step = "① 이대 순증가율이 다른 두 상권보다 낮아지기 시작한 연도와 차이가 가장 큰 구간을 로드뷰 이미지 분석의 기준 연도로 사용해, 인허가 데이터가 잡지 못하는 미신고 공실을 교차 검증할 수 있다. ② 이 결과에서 드러난 주요 연도와 상권 간 차이를 인터랙티브 앱의 연도·상권 필터 기본값과 강조 구간으로 활용한다.")
 )
