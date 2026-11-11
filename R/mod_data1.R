@@ -1,15 +1,14 @@
 # =============================================================================
-# mod_data1.R — Tab 4. Data 1 (여대 상권 비교, 기술통계)
-# 데이터 연결 전에는 "Dataset Not Connected" 상태, DEMO 모드는 명확히 라벨링
+# mod_data1.R — Tab 4. Data 1 (여대 상권 비교: 이화여대·숙명여대·성신여대 음식점 개·폐업)
+# 원본 인허가 CSV 를 읽어 연도별 개업·폐업 통계를 앱 안에서 직접 계산한다.
+# 데이터 파일이 없으면 "Dataset Not Connected" 안내를 보여 준다.
 # =============================================================================
 
 data1UI <- function(id) {
   ns <- NS(id)
   tagList(
-    page_header("Tab 4 · Project 1 dataset", "Data 1 — University Commercial Districts",
-                "이화여대 · 숙명여대 · 성신여대 주변 상권을 기술통계(filter, sort, count, mean, median, rate, group summary)로 비교합니다."),
-    radioButtons(ns("mode"), NULL, c("Real data" = "real", "Demo mode" = "demo"), inline = TRUE),
-    hint("Demo mode 는 UI 시연용 가상 데이터이며 분석 결과가 아닙니다."),
+    page_header("Tab 4 · Project 1 dataset", "Data 1 — 여대 상권 비교",
+                "이화여대(대현동) · 숙명여대(청파동) · 성신여대(동선동) 주변 음식점의 연도별 개업·폐업을 기술통계(filter, count, mean, median, rate, group summary)로 비교합니다."),
     uiOutput(ns("body"))
   )
 }
@@ -17,203 +16,231 @@ data1UI <- function(id) {
 data1Server <- function(id) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
-    real <- load_data1_real()
-    demo <- make_demo_data1()
-
-    state <- reactive(if (identical(input$mode, "demo")) c(demo, demo = TRUE) else c(real, demo = FALSE))
-
+    st <- load_data1_real()           # 앱 시작 시 1회 로드
+    
+    lab <- function(k) unname(st$dong_labels[k])    # 동네 키 → "이화여대 (대현동)"
+    
+    stat_ko <- c(mean = "평균", median = "중앙값", sum = "합계", count = "개수")
+    
+    # 통계값 표시 (count 는 개수, 비율 지표는 %, 나머지는 숫자)
+    fmt_stat <- function(x, metric, stat) {
+      if (stat == "count") return(format(x, big.mark = ",", trim = TRUE))
+      digits <- if (metric %in% DATA1_RATE_METRICS || stat %in% c("mean", "median")) 2 else 0
+      fmt_metric(x, metric, digits)
+    }
+    
+    # ---- 화면 ------------------------------------------------------------------
     output$body <- renderUI({
-      st <- state()
       if (!isTRUE(st$ok)) {
-        return(tagList(
-          card(class = "border-warning mt-3",
-            card_header(span(class = "badge text-bg-warning", "● Dataset Not Connected")),
-            card_body(
-              h4("Project 1 최종 데이터셋이 아직 연결되지 않았습니다"),
-              p(st$reason),
-              tags$ol(
-                tags$li(HTML("최종 CSV 를 <code>data1/data1.csv</code> 로 저장합니다.")),
-                tags$li(HTML("<code>data1/data1_config.R</code> 에서 university / period / industry / metrics 컬럼 이름을 실제 이름으로 바꿉니다.")),
-                tags$li("앱을 다시 실행하면 필터·그래프·요약 통계가 실제 데이터로 갱신됩니다.")),
-              hint("실제 데이터 없이 숫자를 표시하지 않습니다. 화면 구성을 보려면 위의 Demo mode 를 선택하세요.")))))
+        return(card(class = "border-warning mt-3",
+                    card_header(span(class = "badge text-bg-warning", "● Dataset Not Connected")),
+                    card_body(
+                      h4("Project 1 데이터셋이 아직 연결되지 않았습니다"),
+                      p(st$reason),
+                      tags$ol(
+                        tags$li(HTML("원본 CSV(청파동_동선동_대현동_음식점_합본.csv)를 <code>data1/data1_raw.csv</code> 로 저장합니다.")),
+                        tags$li(HTML("<code>data1/data1_config.R</code> 에서 행정동 / 인허가일자 / 폐업일자 / 업태구분명 컬럼 이름을 확인합니다.")),
+                        tags$li("앱을 다시 실행하면 필터·그래프·요약 통계가 실제 데이터로 계산됩니다.")),
+                      hint("실제 데이터 없이 숫자를 표시하지 않습니다."))))
       }
-      periods <- if (st$has$period) sort(unique(st$df$.period)) else NULL
-      inds <- if (st$has$industry) sort(unique(st$df$.industry)) else NULL
+      
+      last_year <- max(st$years)
+      partial <- st$cutoff < as.Date(sprintf("%d-12-31", last_year))
       tagList(
-        if (st$demo) div(class = "alert alert-warning text-center fw-bold fs-5 mt-2", role = "alert",
-                         "⚠️ DEMO DATA — NOT ACTUAL RESULTS"),
-        if (!st$demo && isTRUE(st$unmatched > 0))
-          notice(sprintf("university 값이 매핑되지 않은 %d행은 제외되었습니다 (data1_config.R 의 DATA1_UNIV_VALUES 확인).", st$unmatched)),
+        if (partial)
+          notice(sprintf("%d년은 데이터의 마지막 날짜(%s)까지만 포함된 부분 연도입니다. 연간 비교가 필요하면 연도 범위를 %d년까지로 줄이세요.",
+                         last_year, format(st$cutoff, "%Y-%m-%d"), last_year - 1)),
+        if (isTRUE(st$unmatched > 0))
+          notice(sprintf("행정동이 분석 대상 동네가 아닌 %d행은 제외되었습니다 (data1_config.R 의 DATA1_DONGS 확인).", st$unmatched)),
+        if (isTRUE(st$bad_dates > 0))
+          notice(sprintf("인허가일자를 읽을 수 없는 %d행은 제외되었습니다.", st$bad_dates)),
         layout_columns(col_widths = breakpoints(sm = 12, lg = c(3, 9)),
-          div(
-            ui_card("Filters", icon = "⚙️",
-              checkboxGroupInput(ns("univ"), "University",
-                                 choiceNames = unname(UNIV_LABELS[names(UNIV_COLORS)]),
-                                 choiceValues = names(UNIV_COLORS), selected = names(UNIV_COLORS)),
-              if (!is.null(periods)) {
-                if (is.numeric(periods)) sliderInput(ns("period"), "Period", min(periods), max(periods),
-                                                     range(periods), step = 1, sep = "")
-                else selectInput(ns("period_sel"), "Period", periods, periods, multiple = TRUE)
-              } else hint("🚫 Period — 미지원 (컬럼 미매핑)"),
-              if (!is.null(inds)) selectInput(ns("industry"), "Industry", inds, inds, multiple = TRUE)
-              else hint("🚫 Industry — 미지원 (컬럼 미매핑)"),
-              selectInput(ns("metric"), "Metric", stats::setNames(st$metrics, st$labels)),
-              radioButtons(ns("stat"), "Statistic", c("Mean" = "mean", "Median" = "median", "Sum" = "sum", "Count" = "count"),
-                           inline = TRUE),
-              actionButton(ns("reset"), "↺ Reset filters", class = "btn-outline-secondary w-100"))),
-          div(
-            uiOutput(ns("kpis")),
-            layout_columns(col_widths = breakpoints(sm = 12, lg = c(6, 6)),
-              ui_card("By university", icon = "🏫", plotly::plotlyOutput(ns("p_univ"), height = "300px")),
-              ui_card("By industry", icon = "🏪",
-                      if (st$has$industry) plotly::plotlyOutput(ns("p_ind"), height = "300px")
-                      else hint("🚫 업종 컬럼이 매핑되지 않아 미지원"))),
-            ui_card("Trend over period", icon = "📈",
-                    if (st$has$period) plotly::plotlyOutput(ns("p_trend"), height = "300px")
-                    else hint("🚫 기간 컬럼이 매핑되지 않아 미지원")),
-            ui_card("Group summary table", icon = "📋",
-                    header_right = downloadButton(ns("dl"), "CSV", class = "btn-outline-primary btn-sm"),
-                    DT::DTOutput(ns("table"))),
-            h4(class = "fw-bold mt-3", "Three descriptive findings"),
-            uiOutput(ns("analyses"))))
+                       div(
+                         ui_card("Filters", icon = "⚙️",
+                                 checkboxGroupInput(ns("dong"), "대학 (동네)", choiceNames = unname(lab(st$dongs)),
+                                                    choiceValues = st$dongs, selected = st$dongs),
+                                 sliderInput(ns("years"), "연도 범위", min(st$years), max(st$years),
+                                             range(st$years), step = 1, sep = ""),
+                                 if (st$has$industry)
+                                   selectInput(ns("industry"), "업태 (복수 선택)", st$industries, st$industries, multiple = TRUE)
+                                 else hint("🚫 업태 — 미지원 (컬럼 미매핑)"),
+                                 actionButton(ns("reset"), "↺ Reset filters", class = "btn-outline-secondary w-100")),
+                         hint("개업수 = 인허가일자가 그 해인 업소 수, 폐업수 = 폐업일자가 그 해인 업소 수, 순증감 = 개업수 − 폐업수. 개업률·폐업률 = 각 수 ÷ (연초 영업 중 업소 수 + 그해 개업수).")),
+                       div(
+                         uiOutput(ns("kpis")),
+                         layout_columns(col_widths = breakpoints(sm = 12, lg = c(6, 6)),
+                                        ui_card("1. 개업률 비교", icon = "🟢", plotly::plotlyOutput(ns("p_open"), height = "320px")),
+                                        ui_card("2. 폐업률 비교", icon = "🔴", plotly::plotlyOutput(ns("p_close"), height = "320px"))),
+                         layout_columns(col_widths = breakpoints(sm = 12, lg = c(6, 6)),
+                                        ui_card("3. 대학별 평균 개업률 vs 폐업률", icon = "⚖️", plotly::plotlyOutput(ns("p_avg"), height = "320px")),
+                                        ui_card("5. 누적 순증감 비교", icon = "📊", plotly::plotlyOutput(ns("p_cum"), height = "320px"))),
+                         ui_card("4. 순증감 (개업 수 − 폐업 수)", icon = "➕", plotly::plotlyOutput(ns("p_net"), height = "320px")),
+                         ui_card("Group summary table", icon = "📋",
+                                 header_right = downloadButton(ns("dl"), "CSV", class = "btn-outline-primary btn-sm"),
+                                 DT::DTOutput(ns("table"))),
+                         h4(class = "fw-bold mt-3", "Three descriptive findings"),
+                         uiOutput(ns("analyses"))))
       )
     })
-
+    
     observeEvent(input$reset, {
-      st <- state(); req(st$ok)
-      updateCheckboxGroupInput(session, "univ", selected = names(UNIV_COLORS))
-      if (st$has$period) {
-        p <- sort(unique(st$df$.period))
-        if (is.numeric(p)) updateSliderInput(session, "period", value = range(p))
-        else updateSelectInput(session, "period_sel", selected = p)
-      }
-      if (st$has$industry) updateSelectInput(session, "industry", selected = sort(unique(st$df$.industry)))
-      updateRadioButtons(session, "stat", selected = "mean")
+      updateCheckboxGroupInput(session, "dong", selected = st$dongs)
+      updateSliderInput(session, "years", value = range(st$years))
+      if (st$has$industry) updateSelectInput(session, "industry", selected = st$industries)
     })
-
+    
+    # ---- 데이터 흐름: 업태 필터 → 동네×연도 집계 → 동네·연도 필터 ---------------
+    yearly_all <- reactive({
+      ev <- st$events
+      if (st$has$industry) ev <- ev[ev$industry %in% (input$industry %||% character()), , drop = FALSE]
+      validate(need(nrow(ev) > 0, "업태를 하나 이상 선택하세요."))
+      build_yearly(ev, st$dongs, st$years)
+    })
+    
+    sel_dongs <- reactive(intersect(st$dongs, input$dong %||% character()))
+    
     filtered <- reactive({
-      st <- state(); req(st$ok)
-      d <- st$df
-      d <- d[d$.univ %in% (input$univ %||% character()), , drop = FALSE]
-      if (st$has$period) {
-        if (!is.null(input$period) && is.numeric(d$.period))
-          d <- d[d$.period >= input$period[1] & d$.period <= input$period[2], , drop = FALSE]
-        if (!is.null(input$period_sel)) d <- d[d$.period %in% input$period_sel, , drop = FALSE]
-      }
-      if (st$has$industry && !is.null(input$industry)) d <- d[d$.industry %in% input$industry, , drop = FALSE]
-      d
+      req(input$years)
+      d <- yearly_all()
+      d[d$.dong %in% sel_dongs() & d$.year >= input$years[1] & d$.year <= input$years[2], , drop = FALSE]
     })
-
-    metric <- reactive({ req(input$metric); input$metric })
-    stat_label <- reactive(c(mean = "Mean", median = "Median", sum = "Sum", count = "Count")[[input$stat %||% "mean"]])
-
+    
+    # ---- KPI: 동네별 누적 순증감 + 평균 개업률·폐업률 ----------------------------
     output$kpis <- renderUI({
-      d <- filtered(); m <- metric(); st <- state()
-      if (!nrow(d)) return(empty_state("필터 조건에 맞는 데이터가 없습니다", p("필터를 넓히거나 초기화하세요."), icon = "🔍"))
-      gs <- group_summary(d, m)
-      # 대학별 요약 카드: 대학 고정 컬러를 value_box 테마(R 인자)로 지정
+      d <- filtered()
+      if (!nrow(d)) return(empty_state("필터 조건에 맞는 데이터가 없습니다", p("대학을 선택하거나 필터를 넓히세요."), icon = "🔍"))
+      net <- group_summary(d, "net_n", order = st$dongs)
+      orr <- group_summary(d, "open_rate", order = st$dongs)
+      crr <- group_summary(d, "close_rate", order = st$dongs)
       do.call(layout_column_wrap, c(list(width = "220px", fill = FALSE),
-          lapply(seq_len(nrow(gs)), function(i) {
-            k <- gs$group[i]
-            val <- if ((input$stat %||% "mean") == "count") gs$n[i] else gs[[input$stat %||% "mean"]][i]
-            value_box(
-              title = UNIV_LABELS[[k]],
-              value = format(round(val, 2), big.mark = ","),
-              p(sprintf("%s of %s · n = %d · share %.1f%%", stat_label(), st$labels[[m]], gs$n[i], gs$share_pct[i])),
-              theme = value_box_theme(bg = UNIV_COLORS[[k]], fg = "#FFFFFF"))
-          })))
+                                    lapply(seq_len(nrow(net)), function(i) {
+                                      k <- net$group[i]
+                                      value_box(
+                                        title = paste0(lab(k), " · 누적 순증감"),
+                                        value = sprintf("%+d", as.integer(net$sum[i])),
+                                        p(sprintf("평균 개업률 %s · 평균 폐업률 %s", fmt_metric(orr$mean[i], "open_rate"), fmt_metric(crr$mean[i], "close_rate"))),
+                                        theme = value_box_theme(bg = st$colors[[k]], fg = "#FFFFFF"))
+                                    })))
     })
-
-    base_layout <- function(p, ytitle) {
-      p |> plotly::layout(yaxis = list(title = ytitle), legend = list(orientation = "h", y = -0.25),
+    
+    # ---- 그래프 ----------------------------------------------------------------
+    base_layout <- function(p, ytitle, yfmt = NULL) {
+      p |> plotly::layout(yaxis = list(title = ytitle, tickformat = yfmt),
+                          legend = list(orientation = "h", y = -0.25),
                           paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)") |>
         plotly::config(displaylogo = FALSE)
     }
-    stat_by <- function(d, by) {
-      s <- input$stat %||% "mean"; m <- metric()
-      agg <- stats::aggregate(d[[m]], by = d[by], FUN = function(x) summarise_stat(x, s))
-      names(agg)[ncol(agg)] <- "value"; agg
+    
+    rate_trend <- function(metric, ytitle) {
+      d <- filtered(); validate(need(nrow(d) > 0, "데이터 없음"))
+      p <- plotly::plot_ly()
+      for (k in intersect(st$dongs, unique(as.character(d$.dong)))) {
+        s <- d[d$.dong == k, ]; s <- s[order(s$.year), ]
+        p <- plotly::add_trace(p, x = s$.year, y = s[[metric]], type = "scatter", mode = "lines+markers",
+                               name = lab(k), line = list(color = st$colors[[k]], width = 2.5),
+                               marker = list(color = st$colors[[k]], size = 7),
+                               hovertemplate = paste0("%{x}년 · %{y:.2%}<extra>", lab(k), "</extra>"))
+      }
+      p |> plotly::layout(xaxis = list(title = "연도", dtick = 1)) |> base_layout(ytitle, ".0%")
     }
-
-    output$p_univ <- plotly::renderPlotly({
+    
+    output$p_open  <- plotly::renderPlotly(rate_trend("open_rate", "개업률"))
+    output$p_close <- plotly::renderPlotly(rate_trend("close_rate", "폐업률"))
+    
+    output$p_avg <- plotly::renderPlotly({
       d <- filtered(); validate(need(nrow(d) > 0, "데이터 없음"))
-      a <- stat_by(d, ".univ")
-      plotly::plot_ly(a, x = ~factor(UNIV_LABELS[.univ], levels = UNIV_LABELS), y = ~value, type = "bar",
-                      marker = list(color = unname(UNIV_COLORS[a$.univ])),
-                      text = ~round(value, 2), textposition = "outside",
-                      hovertemplate = "%{x}<br>%{y:,.2f}<extra></extra>") |>
-        plotly::layout(xaxis = list(title = "")) |>
-        base_layout(paste(stat_label(), "of", state()$labels[[metric()]]))
+      o <- group_summary(d, "open_rate", order = st$dongs)
+      c <- group_summary(d, "close_rate", order = st$dongs)
+      plotly::plot_ly() |>
+        plotly::add_bars(x = lab(o$group), y = o$mean, name = "개업률",
+                         marker = list(color = st$rate_colors[["open"]]),
+                         text = sprintf("%.2f%%", 100 * o$mean), textposition = "outside",
+                         hovertemplate = "%{x}<br>평균 개업률 %{y:.2%}<extra></extra>") |>
+        plotly::add_bars(x = lab(c$group), y = c$mean, name = "폐업률",
+                         marker = list(color = st$rate_colors[["close"]]),
+                         text = sprintf("%.2f%%", 100 * c$mean), textposition = "outside",
+                         hovertemplate = "%{x}<br>평균 폐업률 %{y:.2%}<extra></extra>") |>
+        plotly::layout(barmode = "group",
+                       xaxis = list(title = "", categoryorder = "array", categoryarray = lab(o$group))) |>
+        base_layout("평균", ".0%")
     })
-
-    output$p_ind <- plotly::renderPlotly({
+    
+    output$p_net <- plotly::renderPlotly({
       d <- filtered(); validate(need(nrow(d) > 0, "데이터 없음"))
-      a <- stat_by(d, c(".industry", ".univ"))
       p <- plotly::plot_ly()
-      for (k in intersect(names(UNIV_COLORS), unique(a$.univ))) {
-        s <- a[a$.univ == k, ]
-        p <- plotly::add_bars(p, data = s, x = ~.industry, y = ~value, name = UNIV_LABELS[[k]],
-                              marker = list(color = UNIV_COLORS[[k]]))
+      for (k in intersect(st$dongs, unique(as.character(d$.dong)))) {
+        s <- d[d$.dong == k, ]; s <- s[order(s$.year), ]
+        p <- plotly::add_bars(p, x = s$.year, y = s$net_n, name = lab(k), marker = list(color = st$colors[[k]]),
+                              hovertemplate = paste0("%{x}년 · %{y:+d}개<extra>", lab(k), "</extra>"))
       }
-      p |> plotly::layout(barmode = "group", xaxis = list(title = "Industry")) |>
-        base_layout(stat_label())
+      p |> plotly::layout(barmode = "group", xaxis = list(title = "연도", dtick = 1),
+                          shapes = list(list(type = "line", xref = "paper", x0 = 0, x1 = 1, y0 = 0, y1 = 0,
+                                             line = list(color = "#6B7280", width = 1)))) |>
+        base_layout("순증감 (개)")
     })
-
-    output$p_trend <- plotly::renderPlotly({
+    
+    output$p_cum <- plotly::renderPlotly({
       d <- filtered(); validate(need(nrow(d) > 0, "데이터 없음"))
-      a <- stat_by(d, c(".period", ".univ")); a <- a[order(a$.period), ]
-      p <- plotly::plot_ly()
-      for (k in intersect(names(UNIV_COLORS), unique(a$.univ))) {
-        s <- a[a$.univ == k, ]
-        p <- plotly::add_trace(p, data = s, x = ~.period, y = ~value, type = "scatter", mode = "lines+markers",
-                               name = UNIV_LABELS[[k]], line = list(color = UNIV_COLORS[[k]], width = 2.5),
-                               marker = list(color = UNIV_COLORS[[k]], size = 7))
-      }
-      p |> plotly::layout(xaxis = list(title = "Period")) |> base_layout(stat_label())
+      g <- group_summary(d, "net_n", order = st$dongs)
+      plotly::plot_ly(x = lab(g$group), y = g$sum, type = "bar",
+                      marker = list(color = unname(st$colors[g$group])),
+                      text = sprintf("%+d", as.integer(g$sum)), textposition = "outside",
+                      hovertemplate = "%{x}<br>누적 순증감 %{y:+d}개<extra></extra>") |>
+        plotly::layout(xaxis = list(title = "", categoryorder = "array", categoryarray = lab(g$group)),
+                       shapes = list(list(type = "line", xref = "paper", x0 = 0, x1 = 1, y0 = 0, y1 = 0,
+                                          line = list(color = "#6B7280", width = 1)))) |>
+        base_layout("누적 순증감 (개)")
     })
-
+    
+    # ---- 요약표 (평균 / 중앙값 / 합계) -------------------------------------------
     summary_table <- reactive({
       d <- filtered(); req(nrow(d) > 0)
-      gs <- group_summary(d, metric())
-      gs$group <- UNIV_LABELS[gs$group]
-      names(gs) <- c("University", "Count (n)", "Share (%)", "Mean", "Median", "Sum")
-      gs
+      o <- group_summary(d, "open_rate", order = st$dongs)
+      c <- group_summary(d, "close_rate", order = st$dongs)
+      on <- group_summary(d, "open_n", order = st$dongs)
+      cn <- group_summary(d, "close_n", order = st$dongs)
+      nt <- group_summary(d, "net_n", order = st$dongs)
+      data.frame(
+        `대학 (동네)` = lab(o$group), `연도 수` = o$n,
+        `평균 개업률` = o$mean, `중앙값 개업률` = o$median,
+        `평균 폐업률` = c$mean, `중앙값 폐업률` = c$median,
+        `개업 합계` = on$sum, `폐업 합계` = cn$sum, `누적 순증감` = nt$sum,
+        check.names = FALSE, stringsAsFactors = FALSE)
     })
-
+    
     output$table <- DT::renderDT({
       DT::datatable(summary_table(), rownames = FALSE,
-                    options = list(dom = "t", ordering = TRUE, pageLength = 10)) |>
-        DT::formatRound(c("Share (%)", "Mean", "Median", "Sum"), 2)
+                    options = list(dom = "t", ordering = TRUE, pageLength = 10, scrollX = TRUE)) |>
+        DT::formatPercentage(c("평균 개업률", "중앙값 개업률", "평균 폐업률", "중앙값 폐업률"), 2) |>
+        DT::formatRound(c("개업 합계", "폐업 합계", "누적 순증감"), 0)
     })
-
+    
     output$dl <- downloadHandler(
-      filename = function() sprintf("data1_summary_%s%s.csv", metric(), if (isTRUE(state()$demo)) "_DEMO" else ""),
-      content = function(file) {
-        t <- summary_table()
-        if (isTRUE(state()$demo)) t$note <- "DEMO DATA - NOT ACTUAL RESULTS"
-        utils::write.csv(t, file, row.names = FALSE, fileEncoding = "UTF-8")
-      })
-
+      filename = function() "data1_summary.csv",
+      content = function(file) utils::write.csv(summary_table(), file, row.names = FALSE, fileEncoding = "UTF-8"))
+    
+    # ---- 세 가지 기술통계 결과 (질문·입력·수치·해석·시사점) ------------------------
     output$analyses <- renderUI({
-      st <- state(); d <- filtered()
+      d <- filtered()
       an <- st$analyses %||% list()
-      filt_txt <- sprintf("Universities: %s%s%s",
-                          paste(input$univ, collapse = ", "),
-                          if (!is.null(input$period)) sprintf(" · Period %s–%s", input$period[1], input$period[2]) else "",
-                          if (!is.null(input$industry)) sprintf(" · Industries: %d selected", length(input$industry)) else "")
+      n_ind <- if (st$has$industry) length(input$industry) else NA
+      filt_txt <- sprintf("대학: %s · 연도 %s–%s%s",
+                          paste(lab(sel_dongs()), collapse = ", "), input$years[1], input$years[2],
+                          if (st$has$industry && n_ind < length(st$industries))
+                            sprintf(" · 업태 %d/%d 선택", n_ind, length(st$industries)) else " · 업태 전체")
       do.call(layout_column_wrap, c(list(width = "300px", fill = FALSE), lapply(an, function(a) {
-        has_metric <- !is.na(a$metric %||% NA) && a$metric %in% st$metrics
+        has_metric <- !is.null(a$metric) && !is.na(a$metric) && a$metric %in% st$metrics
         nums <- if (has_metric && nrow(d)) {
-          gs <- group_summary(d, a$metric)
+          gs <- group_summary(d, a$metric, order = st$dongs)
           val <- if (a$stat == "count") gs$n else gs[[a$stat]]
           tags$ul(lapply(seq_len(nrow(gs)), function(i)
-            tags$li(sprintf("%s: %s", UNIV_LABELS[[gs$group[i]]], format(round(val[i], 2), big.mark = ",")))))
-        } else hint("🚫 지표가 설정되지 않음 (data1_config.R 의 metric)")
+            tags$li(sprintf("%s: %s", lab(gs$group[i]), fmt_stat(val[i], a$metric, a$stat)))))
+        } else hint("🚫 지표가 설정되지 않았거나 필터 결과가 비어 있음 (data1_config.R 의 metric)")
         ui_card(a$title,
                 tags$dl(
                   tags$dt("Question"), tags$dd(a$question),
                   tags$dt("Inputs (current filters)"), tags$dd(filt_txt),
-                  tags$dt(sprintf("Result — %s of %s", a$stat, if (has_metric) st$labels[[a$metric]] else "?")),
+                  tags$dt(sprintf("Result — %s of %s", stat_ko[[a$stat]], if (has_metric) st$labels[[a$metric]] else "?")),
                   tags$dd(nums),
                   tags$dt("Why it matters"), tags$dd(a$interpretation),
                   tags$dt("Next analysis"), tags$dd(a$next_step)))
