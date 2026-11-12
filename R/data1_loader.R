@@ -1,107 +1,66 @@
 # =============================================================================
-# data1_loader.R — Data 1 데이터 로딩 / 검증 / 집계 (UI 와 분리)
+# data1_loader.R — Data 1 데이터 로딩 / 집계 (UI 와 분리)
 # 원본(업소 1행 = 1건) → 업소 이벤트 표(events) → 동네×연도 표(build_yearly)
 # load_data1_real() 의 반환값:
-#   list(ok, reason, events, dongs, dong_labels, years, industries, cutoff, metrics,
-#        labels, colors, rate_colors, analyses, has, unmatched, bad_dates, bad_close)
+#   성공: list(ok = TRUE, events, dongs, dong_labels, years, industries, cutoff, metrics,
+#              labels, colors, rate_colors, analyses)
+#   실패(데이터 파일 없음): list(ok = FALSE, reason)
 # =============================================================================
-
-if (!exists("%||%", mode = "function"))
-  `%||%` <- function(a, b) if (is.null(a) || !length(a) || (length(a) == 1 && is.na(a))) b else a
 
 DATA1_RATE_METRICS <- c("open_rate", "close_rate")
 
 load_data1_config <- function() {
   env <- new.env()
-  cfg_path <- file.path(PATH_DATA1_DIR, "data1_config.R")
-  if (file.exists(cfg_path)) source(cfg_path, local = env, encoding = "UTF-8")
+  source(file.path(PATH_DATA1_DIR, "data1_config.R"), local = env, encoding = "UTF-8")
   as.list(env)
 }
 
-# 인코딩을 자동으로 찾아 읽기 (UTF-8 BOM / UTF-8 / CP949 순서). 모든 컬럼을 문자로 읽는다.
-read_data1_raw <- function(f, cols) {
-  need <- unlist(cols[c("dong", "open_date", "close_date")])
-  for (enc in c("UTF-8-BOM", "UTF-8", "CP949")) {
-    raw <- tryCatch(
-      suppressWarnings(utils::read.csv(f, fileEncoding = enc, check.names = FALSE,
-                                       colClasses = "character", stringsAsFactors = FALSE)),
-      error = function(e) NULL)
-    if (!is.null(raw) && nrow(raw) && all(need %in% names(raw))) return(raw)
-  }
-  NULL
+# CSV 읽기 (UTF-8 BOM). 모든 컬럼을 문자로 읽는다.
+read_data1_raw <- function(f) {
+  suppressWarnings(utils::read.csv(f, fileEncoding = "UTF-8-BOM", check.names = FALSE,
+                                   colClasses = "character", stringsAsFactors = FALSE))
 }
 
-# 날짜 문자열 → Date. 지원 형식: 2016-03-01 / 2016-3-1 / 2016/03/01 / 2016.03.01 / 20160301
-# (뒤에 시각이 붙어 있어도 날짜만 사용). 비어 있거나 읽을 수 없으면 NA.
+# 날짜 문자열(YYYY-MM-DD) → Date. 비어 있으면(폐업일자가 공백 문자열인 영업 중인 행) NA.
 to_date_safe <- function(x) {
-  x <- trimws(as.character(x))         # 폐업일자가 공백 문자열인 행(영업 중)이 있음
+  x <- trimws(as.character(x))
   x[is.na(x) | !nzchar(x)] <- NA_character_
-  out <- as.Date(rep(NA_real_, length(x)), origin = "1970-01-01")
-  
-  compact <- !is.na(x) & grepl("^[0-9]{8}([^0-9].*)?$", x)        # YYYYMMDD
-  out[compact] <- as.Date(substr(x[compact], 1, 8), format = "%Y%m%d")
-  
-  rest <- !compact & !is.na(x)                                      # 구분자 형식
-  y <- gsub("[./]", "-", substr(x[rest], 1, 10))
-  out[rest] <- as.Date(y, format = "%Y-%m-%d")
-  out
+  as.Date(x, format = "%Y-%m-%d")
 }
 
 # raw → 표준 events 표 (dong, industry, open, close)
 standardize_data1 <- function(raw, cols, dongs, year_from = 2015) {
-  has_ind <- !is.null(cols$industry) && length(cols$industry) == 1 &&
-    !is.na(cols$industry) && cols$industry %in% names(raw)
-  
-  close_txt <- trimws(as.character(raw[[cols$close_date]]))
   ev <- data.frame(
     dong     = trimws(raw[[cols$dong]]),
-    industry = if (has_ind) trimws(raw[[cols$industry]]) else NA_character_,
+    industry = trimws(raw[[cols$industry]]),
     open     = to_date_safe(raw[[cols$open_date]]),
     close    = to_date_safe(raw[[cols$close_date]]),
-    close_unreadable = !is.na(close_txt) & nzchar(close_txt),   # 폐업일자에 값이 있는 행(아래에서 읽힌 행 제외)
     stringsAsFactors = FALSE)
-  ev$close_unreadable <- ev$close_unreadable & is.na(ev$close)
-  if (has_ind) ev$industry[is.na(ev$industry) | !nzchar(ev$industry)] <- "(미상)"
-  
-  unmatched <- sum(!(ev$dong %in% dongs))
-  ev <- ev[ev$dong %in% dongs, , drop = FALSE]
-  bad_dates <- sum(is.na(ev$open))                 # 개업일을 알 수 없는 행은 제외
-  ev <- ev[!is.na(ev$open), , drop = FALSE]
-  if (!nrow(ev)) return(list(ok = FALSE, reason = "분석 대상 동네(행정동)에 해당하는 행이 없습니다."))
-  # 폐업일자에 값은 있는데 날짜로 읽지 못한 행: '영업 중'으로 처리되어 폐업률이 낮아질 수 있음
-  bad_close <- sum(ev$close_unreadable)
-  ev$close_unreadable <- NULL
   
   last_date <- max(c(ev$open, ev$close), na.rm = TRUE)
   year_to <- as.integer(format(last_date, "%Y"))
   list(ok = TRUE, events = ev, dongs = dongs,
        years = seq.int(as.integer(year_from), year_to),
-       industries = if (has_ind) sort(unique(ev$industry)) else NULL,
-       cutoff = last_date, unmatched = unmatched, bad_dates = bad_dates, bad_close = bad_close,
-       has = list(industry = has_ind))
+       industries = sort(unique(ev$industry)),
+       cutoff = last_date)
 }
 
 load_data1_real <- function() {
   cfg <- load_data1_config()
-  f <- cfg$DATA1_FILE %||% file.path(PATH_DATA1_DIR, "data1.csv")
+  f <- cfg$DATA1_FILE
   if (!file.exists(f))
-    return(list(ok = FALSE, reason = sprintf("데이터 파일 '%s' 이(가) 없습니다.", f)))
-  cols <- cfg$DATA1_COLUMNS
-  raw <- read_data1_raw(f, cols)
-  if (is.null(raw))
-    return(list(ok = FALSE, reason = "CSV 를 읽을 수 없거나, 설정한 컬럼(행정동·인허가일자·폐업일자)이 없습니다."))
+    return(list(ok = FALSE, reason = sprintf("The data file '%s' was not found.", f)))
+  raw <- read_data1_raw(f)
   
-  dongs <- cfg$DATA1_DONGS %||% c("대현동", "청파동", "동선동")
-  out <- standardize_data1(raw, cols, dongs, cfg$DATA1_YEAR_FROM %||% 2015)
-  if (!isTRUE(out$ok)) return(out)
+  out <- standardize_data1(raw, cfg$DATA1_COLUMNS, cfg$DATA1_DONGS, cfg$DATA1_YEAR_FROM)
   
   labels <- cfg$DATA1_METRIC_LABELS
   out$metrics <- names(labels)
   out$labels <- labels
-  out$dong_labels <- cfg$DATA1_DONG_LABELS %||% stats::setNames(dongs, dongs)
+  out$dong_labels <- cfg$DATA1_DONG_LABELS
   out$colors <- cfg$DATA1_DONG_COLORS
   out$rate_colors <- cfg$DATA1_RATE_COLORS
-  out$analyses <- cfg$DATA1_ANALYSES %||% list()
+  out$analyses <- cfg$DATA1_ANALYSES
   out
 }
 
@@ -135,8 +94,7 @@ summarise_stat <- function(x, stat) {
   switch(stat,
          mean = if (length(x)) mean(x) else NA_real_,
          median = if (length(x)) stats::median(x) else NA_real_,
-         sum = sum(x),
-         count = length(x))
+         sum = sum(x))
 }
 
 # 동네별 요약: n = 연도 수, mean / median / sum
