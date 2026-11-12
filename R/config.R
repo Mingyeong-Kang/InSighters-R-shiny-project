@@ -3,11 +3,11 @@
 # =============================================================================
 
 # ---- 팀 정보 ---------------------------------------------------------------
-TEAM_NAME <- "Team Name"            # TODO: 팀명으로 변경 (앱 제목에 표시)
+TEAM_NAME <- "InSighters"
 
 # 팀원 목록. signed 는 각 팀원이 윤리 서약문을 직접 읽고 동의한 뒤 TRUE 로 바꿉니다.
 TEAM_MEMBERS <- data.frame(
-  name   = c("Member 1", "Member 2", "Member 3", "Member 4", "Member 5"),  # TODO: 실명
+  name   = c("강민경", "구가현", "김지유", "서은서", "조가희"),
   signed = c(FALSE, FALSE, FALSE, FALSE, FALSE),
   stringsAsFactors = FALSE
 )
