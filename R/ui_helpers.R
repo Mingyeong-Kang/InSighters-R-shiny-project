@@ -38,17 +38,17 @@ empty_state <- function(title, ..., icon = "📭", tone = "neutral") {
                  div(class = "text-muted", ...)))
 }
 
-error_state <- function(msg) empty_state("문제가 발생했어요", p(msg), icon = "⚠️", tone = "error")
+error_state <- function(msg) empty_state("Something went wrong", p(msg), icon = "⚠️", tone = "error")
 
 notice <- function(..., type = "warning") div(class = paste0("alert alert-", type, " py-2 small"), ...)
 
 # 정답 여부 배지 (Bootstrap badge 클래스)
 verdict_badge <- function(pred, truth) {
   if (is.null(truth) || is.na(truth) || !nzchar(truth)) {
-    return(span(class = "badge text-bg-secondary fs-6", "정답 정보 없음 (Unknown)"))
+    return(span(class = "badge text-bg-secondary fs-6", "Actual category unknown"))
   }
-  if (identical(pred, truth)) span(class = "badge text-bg-success fs-6", "✓ Right — 정답")
-  else span(class = "badge text-bg-danger fs-6", "✗ Wrong — 오답")
+  if (identical(pred, truth)) span(class = "badge text-bg-success fs-6", "✓ Right")
+  else span(class = "badge text-bg-danger fs-6", "✗ Wrong")
 }
 
 # 카테고리 배지: 색 대신 Bootstrap 테마 색 이름으로 구분 + 글자 라벨 병기
@@ -82,7 +82,7 @@ render_match_panel <- function(pca, query_vec, query_label, res, K, truth = NULL
     card(class = "border-primary",
          card_body(
            layout_columns(col_widths = breakpoints(sm = 12, md = c(6, 6)),
-             div(div(class = "small text-muted text-uppercase fw-semibold", "Predicted category (Top 5 최빈값)"),
+             div(div(class = "small text-muted text-uppercase fw-semibold", "Predicted category (Top 5 majority vote)"),
                  div(class = "my-1", cat_chip(res$prediction, "fs-5")),
                  div(class = "small text-muted",
                      paste(sprintf("%s × %d", names(votes), as.integer(votes)), collapse = " · "))),
