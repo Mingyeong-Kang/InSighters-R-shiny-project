@@ -30,7 +30,7 @@ ourShoesUI <- function(id) {
   ns <- NS(id)
   tagList(
     page_header("Tab 3 · Never-seen photos", "Our Shoes",
-                "Can your app recognize real shoes it has never seen? 팀원이 직접 찍은 신발 사진을 같은 전처리·같은 PCA 로 검색합니다."),
+                "Can your app recognize real shoes it has never seen? Each team member's own shoe photos go through the same preprocessing and the same PCA as the catalogue."),
     uiOutput(ns("body"))
   )
 }
@@ -48,20 +48,20 @@ ourShoesServer <- function(id, pca, search) {
 
     output$body <- renderUI({
       if (!nrow(shoes)) {
-        return(empty_state("아직 등록된 팀원 신발 사진이 없어요",
-          p("1. 각 팀원이 자기 신발 3켤레를 촬영합니다 (신발만, 단색 배경)."),
-          p(HTML("2. 파일 이름을 <code>이름_카테고리_번호.jpg</code> 로 저장합니다. 예: <code>Whae_Sandals_1.jpg</code>")),
-          p(HTML("3. 카테고리는 <code>Boots / Sandals / Shoes / Slippers</code> 중 하나.")),
-          p(HTML("4. 프로젝트의 <code>our_shoes/</code> 폴더에 넣고 앱을 다시 실행하면 자동으로 표시됩니다.")),
+        return(empty_state("No team shoe photos yet",
+          p("1. Each member photographs 3 of their own shoes (shoe only, plain background)."),
+          p(HTML("2. Name each file <code>Name_Category_n.jpg</code>, e.g. <code>Whae_Sandals_1.jpg</code>")),
+          p(HTML("3. Category is one of <code>Boots / Sandals / Shoes / Slippers</code>.")),
+          p(HTML("4. Put the files in the <code>our_shoes/</code> folder and restart the app; they appear automatically.")),
           icon = "👟"))
       }
       skipped <- attr(shoes, "skipped")
       tagList(
         if (length(skipped)) notice(
-          sprintf("파일 이름 규칙에 맞지 않아 제외된 파일: %s", paste(skipped, collapse = ", "))),
+          sprintf("Skipped (file name is not Name_Category_n.jpg): %s", paste(skipped, collapse = ", "))),
         layout_columns(col_widths = breakpoints(sm = 12, lg = c(5, 7)),
           ui_card("Gallery", icon = "🖼️",
-            subtitle = sprintf("%d명 · %d장 — 사진을 골라 선택하세요",
+            subtitle = sprintf("%d members · %d photos — pick one",
                                length(unique(shoes$member)), nrow(shoes)),
             layout_columns(col_widths = c(5, 5, 2),
                 selectInput(ns("member"), "Member", c("All", unique(shoes$member))),
@@ -70,7 +70,7 @@ ourShoesServer <- function(id, pca, search) {
                                                  title = "Reset filters"))),
             uiOutput(ns("gallery"))),
           div(
-            ui_card("Result", icon = "🔎", subtitle = "Shoe Search 탭의 K 값을 공유합니다",
+            ui_card("Result", icon = "🔎", subtitle = "Uses the same K as the Shoe Search tab",
                     uiOutput(ns("result"))),
             ui_card("Team summary", icon = "📊", uiOutput(ns("summary")))))
       )
@@ -91,13 +91,13 @@ ourShoesServer <- function(id, pca, search) {
     # 갤러리 = 선택 위젯: 사진·이름·카테고리를 라벨로 가진 radioButtons
     output$gallery <- renderUI({
       d <- filtered()
-      if (!nrow(d)) return(empty_state("조건에 맞는 사진이 없습니다", p("필터를 초기화해 보세요."), icon = "🔍"))
+      if (!nrow(d)) return(empty_state("No photos match these filters", p("Try resetting the filters."), icon = "🔍"))
       current <- isolate(input$pick)
       labels <- lapply(seq_len(nrow(d)), function(i) {
         f <- d$file[i]; v <- vecs[[f]]
         span(if (!is.null(v)) tags$img(src = gray_uri(v, scale = 2), width = 88, height = 88, alt = f,
                                        class = "border rounded")
-             else span(class = "badge text-bg-secondary", "읽기 실패"),
+             else span(class = "badge text-bg-secondary", "Read error"),
              strong(d$member[i]), cat_chip(d$category[i] %||% "Unknown"),
              span(class = "small text-muted", f))
       })
@@ -109,7 +109,7 @@ ourShoesServer <- function(id, pca, search) {
     output$result <- renderUI({
       req(input$pick)
       f <- input$pick; v <- vecs[[f]]
-      if (is.null(v)) return(error_state(paste(f, "을(를) 읽을 수 없습니다.")))
+      if (is.null(v)) return(error_state(paste("Could not read", f)))
       truth <- shoes$category[shoes$file == f]
       res <- search_similar(pca, v, search$K(), TOP_N)
       render_match_panel(pca, v, f, res, search$K(), truth)
