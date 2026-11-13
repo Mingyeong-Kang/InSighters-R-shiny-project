@@ -111,14 +111,16 @@ ourShoesServer <- function(id, pca, search) {
       f <- input$pick; v <- vecs[[f]]
       if (is.null(v)) return(error_state(paste(f, "을(를) 읽을 수 없습니다.")))
       truth <- shoes$category[shoes$file == f]
-      res <- search_similar(pca, v, search$K(), TOP_N)
-      render_match_panel(pca, v, f, res, search$K(), truth)
+      # Shoe Search 업로드와 같은 방식: 원본/좌우반전 중 Best match 가 더 가까운 쪽 사용
+      res <- search_auto_flip(pca, v, search$K(), TOP_N)
+      render_match_panel(pca, res$x, paste0(f, if (res$flipped) " (mirrored)" else ""),
+                         res, search$K(), truth)
     })
 
     output$summary <- renderUI({
       K <- search$K()
       preds <- vapply(shoes$file, function(f) {
-        v <- vecs[[f]]; if (is.null(v)) NA_character_ else search_similar(pca, v, K)$prediction
+        v <- vecs[[f]]; if (is.null(v)) NA_character_ else search_auto_flip(pca, v, K)$prediction
       }, "")
       ok <- !is.na(preds) & !is.na(shoes$category)
       acc <- if (any(ok)) mean(preds[ok] == shoes$category[ok]) else NA
