@@ -239,8 +239,6 @@ data1Server <- function(id) {
         ui_card(a$title,
                 tags$dl(
                   tags$dt("Question"), tags$dd(a$question),
-                  tags$dt("Inputs (current filters)"), tags$dd(filt_txt),
-                  tags$dt("Result"), tags$dd(result),
                   tags$dt("Why it matters"), tags$dd(a$interpretation),
                   tags$dt("Next analysis"), tags$dd(a$next_step)))
       })))
