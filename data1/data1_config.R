@@ -43,22 +43,28 @@ DATA1_METRIC_LABELS <- c(
   close_rate = "Closure rate"
 )
 
-# 7) 분석 결과 3개. 수치는 앱이 현재 필터 기준으로 자동 계산합니다.
+# 7) 분석 결과 1개. 수치는 앱이 현재 필터 기준으로 자동 계산합니다.
 #    metric : DATA1_METRIC_LABELS 의 이름 중 하나
 #    stat   : "mean", "median", "sum" 중 하나 (동네별로 연도 값들을 요약)
-#    질문/해석/시사점은 실제 수치를 본 뒤 팀이 직접 작성하세요. (화면에 영어로 표시됩니다)
+#
+#    질문 : 2008–2026년 일반음식점·휴게음식점 기준, 이대(대현동) 상권이
+#           숙대(청파동)·성신여대(동선동) 상권보다 더 빠르게 줄었는가?
+#    지표 : 개업률·폐업률 (당해 1월 1일 점포 수 대비) → 세 상권 비교용
+#           개업 수 − 폐업 수 (개수) → 증가·감소 방향(+/−)과 실제 규모 확인용
+#           (개수는 상권 크기의 영향을 받아 상권 간 비교에는 쓰지 않음)
+#    중요성 : 상권 쇠퇴는 개업률 하락 또는 폐업률 상승으로 일어남.
+#             소비자 구성(여대생 중심)이 비슷한데 재학생 수가 가장 많은 이대만 더 빨리 줄었다면
+#             학생 수가 아닌 임대료·유동인구 변화·정부 정책 등의 요인일 가능성
+#    다음 분석 : (1) 개업 − 폐업이 마이너스로 돌아선 연도 / 개폐업률 차이가 가장 큰 구간
+#                  → 로드뷰 이미지 분석 기준 연도 (미신고 공실 교차 검증)
+#                (2) 주요 연도·상권 간 차이 → 인터랙티브 앱 필터 기본값·강조 구간
+#    (화면에 표시되는 문구는 아래 question / interpretation / next_step 에 영어로 작성)
 DATA1_ANALYSES <- list(
-  list(title = "Analysis 1",
-       question = "How does the average opening rate differ across universities?",
-       metric = "open_rate", stat = "mean",
-       interpretation = "TODO",
-       next_step = "TODO"),
-  list(title = "Analysis 2",
-       question = "How does the average closure rate differ across universities?",
-       metric = "close_rate", stat = "mean",
-       interpretation = "TODO", next_step = "TODO"),
-  list(title = "Analysis 3",
-       question = "Which university's commercial district gained or lost the most establishments over the selected period?",
-       metric = "net_n", stat = "sum",
-       interpretation = "TODO", next_step = "TODO")
+  list(
+    title = "Did the Ewha district decline faster?",
+    question = "Among the commercial districts around three women's universities whose main consumers are female students — Ewha (대현동), Sookmyung (청파동), and Sungshin (동선동) — did the Ewha district decline faster than the other two, based on general and rest restaurants (일반음식점·휴게음식점) from 2008 to 2026? (Metrics: opening rate and closure rate relative to the number of stores as of January 1 of each year, and openings − closures. Since counts are affected by district size, the three districts are compared using opening and closure rates, while openings − closures is used to check the direction and actual scale of change.)",
+    metric = NA, stat = "mean",
+    interpretation = "A commercial district declines either through a falling opening rate or a rising closure rate. Looking at both rates together allows us to compare the path and speed of decline across three districts of different sizes on the same basis, while openings − closures shows whether the number of stores is actually shrinking. Since the three districts have a similar consumer base centered on female university students, if only Ewha — which has the largest student population — declined faster, the difference is likely driven not by student numbers but by factors such as rent, changes in foot traffic, or government policy.",
+    next_step = "(1) The year when Ewha's openings − closures turned negative, and the period with the largest gap in opening and closure rates compared with the other two districts, can be used as reference years for the road-view image analysis, cross-validating vacancies not captured in the license data. (2) The key years and district differences revealed by this result will be used as default year/district filter values and highlighted periods in the interactive app."
+  )
 )

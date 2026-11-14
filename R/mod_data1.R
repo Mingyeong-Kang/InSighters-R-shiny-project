@@ -71,7 +71,7 @@ data1Server <- function(id) {
                          ui_card("Group summary table", icon = "📋",
                                  header_right = downloadButton(ns("dl"), "CSV", class = "btn-outline-primary btn-sm"),
                                  DT::DTOutput(ns("table"))),
-                         h4(class = "fw-bold mt-3", "Three descriptive findings"),
+                                                  h4(class = "fw-bold mt-3", "Descriptive findings"),
                          uiOutput(ns("analyses"))))
       )
     })
@@ -222,22 +222,26 @@ data1Server <- function(id) {
                           if (n_ind < length(st$industries))
                             sprintf(" · %d/%d business types selected", n_ind, length(st$industries)) else " · All business types")
       do.call(layout_column_wrap, c(list(width = "300px", fill = FALSE), lapply(an, function(a) {
-        has_metric <- !is.null(a$metric) && !is.na(a$metric) && a$metric %in% st$metrics
-        nums <- if (has_metric && nrow(d)) {
-          gs <- group_summary(d, a$metric, order = st$dongs)
-          val <- gs[[a$stat]]
-          tags$ul(lapply(seq_len(nrow(gs)), function(i)
-            tags$li(sprintf("%s: %s", lab(gs$group[i]), fmt_stat(val[i], a$metric, a$stat)))))
-        } else hint("🚫 No metric is configured, or the filtered result is empty (check metric in data1_config.R)")
+        metrics <- a$metric %||% NA_character_
+        stats   <- rep_len(a$stat %||% "mean", length(metrics))
+        ok      <- !is.na(metrics) & metrics %in% st$metrics
+        result <- if (any(ok) && nrow(d)) {
+          lapply(which(ok), function(j) {
+            m <- metrics[j]; s <- stats[j]
+            gs  <- group_summary(d, m, order = st$dongs)
+            val <- gs[[s]]
+            tagList(
+              tags$strong(sprintf("%s of %s", stat_en[[s]], st$labels[[m]])),
+              tags$ul(lapply(seq_len(nrow(gs)), function(i)
+                tags$li(sprintf("%s: %s", lab(gs$group[i]), fmt_stat(val[i], m, s))))))
+          })
+        } else list(hint("🚫 No metric is configured, or the filtered result is empty (check metric in data1_config.R)"))
         ui_card(a$title,
                 tags$dl(
                   tags$dt("Question"), tags$dd(a$question),
-                  tags$dt("Inputs (current filters)"), tags$dd(filt_txt),
-                  tags$dt(sprintf("Result — %s of %s", stat_en[[a$stat]], if (has_metric) st$labels[[a$metric]] else "?")),
-                  tags$dd(nums),
                   tags$dt("Why it matters"), tags$dd(a$interpretation),
                   tags$dt("Next analysis"), tags$dd(a$next_step)))
       })))
     })
-  })
+    })
 }
