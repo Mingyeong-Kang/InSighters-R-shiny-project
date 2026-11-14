@@ -1,8 +1,4 @@
-# =============================================================================
-# mod_explain_pca.R — Tab 2. Explain PCA (Shoe Search 에서 고른 사진을 그대로 사용)
-# =============================================================================
-
-# 한 단계 = 한 탭. 제목·수식·설명 + 내용
+# 공통 Step 탭 UI
 step_panel <- function(n, title, formula, desc, ...) {
   nav_panel(
     title = paste0(n, ". ", title),
@@ -15,109 +11,122 @@ step_panel <- function(n, title, formula, desc, ...) {
   )
 }
 
+# Explain PCA 화면 구성
 explainPcaUI <- function(id) {
   ns <- NS(id)
   tagList(
-    page_header("Tab 2 · How the match is found", "Explain PCA",
-                "Shoe Search 에서 고른 사진이 어떻게 숫자 K 개로 요약되고, 그 숫자로 가장 비슷한 신발을 찾는지 단계별로 보여줍니다."),
+    page_header("Tab 2 · how PCA finds the match ", "Explain PCA",
+                "Explore how PCA represents the selected shoe and uses its PC scores to find similar shoes."),
     uiOutput(ns("current_photo")),
+
     navset_card_pill(
       id = ns("step"),
+
       step_panel(1, "Average shoe", "x̄ = (1/2000) Σ xᵢ",
-        "2,000장의 같은 위치 픽셀 밝기를 평균한 '전형적인 신발'입니다. PCA 는 모든 사진을 이 평균에서 얼마나 벗어나는지로 설명합니다.",
+        "The average image is made by averaging each pixel across 2,000 shoe photos. PCA analyzes how each photo differs from this average.",
         uiOutput(ns("step1"))),
+
       step_panel(2, "Photo − average", "x − x̄",
-        "선택한 사진에서 평균 신발을 뺀 결과입니다. 주황색은 평균보다 밝은 픽셀, 파란색은 평균보다 어두운 픽셀, 흰색은 차이가 없는 픽셀입니다.",
+        "Subtract the average shoe from the selected photo to see pixel-level differences. Orange means brighter, blue means darker, and white means little or no difference.",
         uiOutput(ns("step2"))),
+
       step_panel(3, "Score map", "zᵢ₁ = (xᵢ − x̄)·v₁,  zᵢ₂ = (xᵢ − x̄)·v₂",
-        "카탈로그 2,000장을 처음 두 주성분 좌표에 찍었습니다. 확대/축소, hover 로 id 를 확인할 수 있고 ★ 이 선택한 사진, ◆ 가 Top 5 입니다.",
+                 "This plot shows 2,000 shoes by their PC1 and PC2 scores. The star marks the selected photo.",
         checkboxGroupInput(ns("cat_filter"), "Show categories", CATEGORIES, CATEGORIES, inline = TRUE),
         plotly::plotlyOutput(ns("score_map"), height = "460px")),
+
       step_panel(4, "Eigenshoes", "v₁, v₂, …  (loadings, 4,096 → 64 × 64)",
-        "각 주성분의 loading 벡터를 64×64 그림으로 그린 것입니다. 주황/파랑은 그 PC 점수가 커질 때 밝아지는/어두워지는 영역입니다. 아래 그래프는 PC별 설명분산비율과 누적비율입니다.",
-        sliderInput(ns("n_eigen"), "How many eigenshoes", 4, 32, 12, step = 4, ticks = FALSE),
+        "Each eigenshoe visualizes the pixel-brightness pattern represented by a PC as a 64×64 image. The chart below shows explained and cumulative variance.",
+        sliderInput(ns("n_eigen"), "Number of PCs to display", 4, 32, 12, step = 4, ticks = FALSE),
         uiOutput(ns("eigen_gallery")),
         plotly::plotlyOutput(ns("scree"), height = "320px")),
+
       step_panel(5, "Scores", "z = Vₖᵀ (x − x̄)",
-        "선택한 사진의 처음 K 개 점수입니다. 검색은 이 K 개 숫자 벡터와 카탈로그 각 신발의 점수 벡터 사이의 유클리드 거리로 이루어집니다. Best match 의 점수를 나란히 표시해 비교합니다.",
+        "Compare the selected shoe’s PC scores with those of its closest match.",
         plotly::plotlyOutput(ns("scores_plot"), height = "340px"),
         div(class = "table-responsive", tableOutput(ns("scores_table")))),
+
       step_panel(6, "Rebuild", "x̂ₖ = x̄ + Σⱼ₌₁ᴷ zⱼ vⱼ",
-        "평균 신발에 eigenshoe 를 점수만큼 더해 사진을 다시 만듭니다. K 가 작으면 대략적인 형태(부츠인지, 굽이 있는지)만 남고, K 가 커질수록 끈·밑창 같은 세부가 살아나며 원본과의 오차(RMSE)가 줄어듭니다.",
+        "Reconstruct the selected shoe using the average image, PC scores, and eigenshoes. As the number of PCs (K) increases, the reconstruction gets closer to the original and the reconstruction error (RMSE) decreases.",
         uiOutput(ns("rebuild_gallery")),
         plotly::plotlyOutput(ns("rebuild_curve"), height = "300px")),
+
       step_panel(7, "More: how good is K?", "Leave-one-out Top-5 vote accuracy",
-        "카탈로그 각 사진을 자기 자신을 뺀 1,999장에서 검색했을 때 Top 5 투표가 실제 카테고리와 맞은 비율입니다(실제 계산값). 적당한 K 에서 정확도가 포화되는지 확인할 수 있습니다.",
+        "For each shoe, find the top five matches among the other 1,999 shoes. Predict its category by majority vote and compare it with the true category. LOO accuracy shows how search performance changes with K.",
         plotly::plotlyOutput(ns("loo_plot"), height = "300px"))
     )
   )
 }
 
+# Shoe Search에서 선택 사진과 K를 받아 결과를 갱신
 explainPcaServer <- function(id, pca, search) {
   moduleServer(id, function(input, output, session) {
     sel <- search$selected
     K   <- search$K
     res <- search$result
 
+    # 현재 선택한 신발
     output$current_photo <- renderUI({
       s <- sel()
       card(card_body(class = "py-2",
-        layout_columns(col_widths = c(2, 10),
+          layout_columns(col_widths = c(2, 10),
           shoe_img(gray_uri(s$x, scale = 2), s$label, 64),
-          div(strong("Explaining: "), span(s$label), span(class = "text-muted", sprintf(" · K = %d", K())),
-              hint("다른 사진/K 를 보려면 Shoe Search 탭에서 바꾸세요. 이 탭은 자동으로 갱신됩니다.")))))
+          div(strong("Explaining: "), span(s$label),
+          span(class = "text-muted", sprintf(" · K = %d", K()))))))
     })
 
+    # Step 1: 평균 신발
     output$step1 <- renderUI({
-      layout_columns(col_widths = breakpoints(sm = 12, md = c(4, 8)),
-          shoe_figure(pca$mean, "x̄ (average shoe)", size = 180),
-          div(
-              p(sprintf("카탈로그 %s장 × %s 픽셀 행렬의 열 평균입니다.", format(nrow(pca$X), big.mark = ","),
-                        format(ncol(pca$X), big.mark = ","))),
-              p(sprintf("평균 밝기: %.3f (0 = 검정, 1 = 흰색)", mean(pca$mean))),
-              p(class = "text-muted", "흐릿한 이유: 부츠·샌들·운동화가 겹쳐 평균되었기 때문입니다.")))
+      div(
+        class = "d-flex justify-content-center",
+        shoe_figure(pca$mean, "x̄ (average shoe)", size = 180)
+      )
     })
 
+    # Step 2: 선택 사진과 평균의 픽셀별 차이
     output$step2 <- renderUI({
       s <- sel(); d <- s$x - pca$mean
       lim <- max(abs(d))
       tagList(
         layout_column_wrap(width = "150px", fill = FALSE,
-          shoe_figure(s$x, "x (your photo)", size = 140),
-          shoe_figure(pca$mean, "x̄ (average)", size = 140),
-          shoe_figure(d, "x − x̄", size = 140, diverging = TRUE, lim = lim)),
+                           div(class = "d-flex justify-content-center",
+                               shoe_figure(s$x, "x (your photo)", size = 140)),
+                           div(class = "d-flex justify-content-center",
+                               shoe_figure(pca$mean, "x̄ (average)", size = 140)),
+                           div(class = "d-flex justify-content-center",
+                               shoe_figure(d, "x − x̄", size = 140, diverging = TRUE, lim = lim))
+        ),
+        
         div(class = "mt-2 small",
             span(sprintf("darker (−%.2f) ", lim)),
-            tags$img(src = diverging_legend_uri(), width = 240, height = 14, alt = "legend", class = "border"),
-            span(sprintf(" brighter (+%.2f)", lim))),
-        hint(sprintf("평균보다 밝은 픽셀 %.0f%% · 어두운 픽셀 %.0f%% (차이 0.05 초과 기준)",
-                     100 * mean(d > 0.05), 100 * mean(d < -0.05))))
+            tags$img(src = diverging_legend_uri(), width = 240, height = 14,
+                     alt = "legend", class = "border"),
+            span(sprintf(" brighter (+%.2f)", lim))
+        )
+      )
     })
 
+    # Step 3: PC1·PC2 점수 분포와 선택 사진의 위치
     output$score_map <- plotly::renderPlotly({
       cats <- input$cat_filter
       df <- data.frame(id = pca$meta$id, category = pca$meta$category,
                        PC1 = pca$scores[, 1], PC2 = pca$scores[, 2])
       df <- df[df$category %in% cats, ]
       z <- project_photo(pca, sel()$x, 2)
-      top <- res()$top
-      tp <- data.frame(PC1 = pca$scores[match(top$id, pca$meta$id), 1],
-                       PC2 = pca$scores[match(top$id, pca$meta$id), 2], id = top$id)
       p <- plotly::plot_ly()
+
       if (nrow(df)) {
         p <- plotly::add_markers(p, data = df, x = ~PC1, y = ~PC2, color = ~category,
                                  colors = CAT_COLORS, marker = list(size = 6, opacity = 0.55),
                                  text = ~sprintf("ID %04d<br>%s", id, category), hoverinfo = "text")
       }
       p |>
-        plotly::add_markers(data = tp, x = ~PC1, y = ~PC2, name = "Top 5",
-                            marker = list(symbol = "diamond", size = 11, color = "#FFFFFF",
-                                          line = list(color = COL$text, width = 2)),
-                            text = ~sprintf("Top 5 · ID %04d", id), hoverinfo = "text", inherit = FALSE) |>
+
         plotly::add_markers(x = z[1], y = z[2], name = "Your photo",
                             marker = list(symbol = "star", size = 20, color = COL$danger,
                                           line = list(color = "#FFFFFF", width = 1.5)),
                             text = sel()$label, hoverinfo = "text", inherit = FALSE) |>
+
         plotly::layout(
           xaxis = list(title = sprintf("PC1 score (%.1f%% of variance)", 100 * pca$var_ratio[1]),
                        zeroline = TRUE, zerolinecolor = COL$border),
@@ -130,6 +139,7 @@ explainPcaServer <- function(id, pca, search) {
                        toImageButtonOptions = list(filename = "pca_score_map", format = "png"))
     })
 
+    # Step 4: 고유벡터를 이미지로 표현한 Eigenshoe
     output$eigen_gallery <- renderUI({
       n <- input$n_eigen %||% 12
       tagList(
@@ -139,19 +149,22 @@ explainPcaServer <- function(id, pca, search) {
                  card_body(class = "text-center p-2",
                    shoe_img(diverging_uri(pca$loadings[, j], scale = 2), paste("PC", j), 96),
                    div(class = "small fw-semibold", paste0("PC", j), if (j <= K()) span(class = "badge text-bg-primary", "in K")),
-                   div(class = "small text-muted", sprintf("%.2f%% of variance", 100 * pca$var_ratio[j])),
-                   tags$progress(value = round(pca$var_ratio[j], 5), max = round(pca$var_ratio[1], 5), class = "w-100")))
+                   div(class = "small text-muted", sprintf("%.2f%% of variance", 100 * pca$var_ratio[j]))
+                 ))
           }))),
-        hint(sprintf("파란 테두리 + 'in K' = 현재 검색에 쓰이는 PC (K = %d)", K())))
+        hint(sprintf("PCs with bold green borders are used in the current search. (K = %d)", K())))
     })
 
+    # 각 PC의 설명분산비율과 누적 설명분산비율
     output$scree <- plotly::renderPlotly({
       n <- min(50, length(pca$var_ratio))
       df <- data.frame(PC = seq_len(n), var = 100 * pca$var_ratio[1:n], cum = 100 * pca$cum_ratio[1:n])
       plotly::plot_ly(df, x = ~PC) |>
+
         plotly::add_bars(y = ~var, name = "Explained variance (%)",
                          marker = list(color = ifelse(df$PC <= K(), COL$primary, "#B8CCC4")),
                          hovertemplate = "PC%{x}: %{y:.2f}%<extra></extra>") |>
+
         plotly::add_lines(y = ~cum, name = "Cumulative (%)", yaxis = "y2",
                           line = list(color = COL$text, width = 2),
                           hovertemplate = "PC1–%{x}: %{y:.1f}%<extra></extra>") |>
@@ -164,6 +177,7 @@ explainPcaServer <- function(id, pca, search) {
         plotly::config(displaylogo = FALSE)
     })
 
+    # Step 5: 선택 사진과 가장 유사한 신발의 첫 K개 PC score
     scores_df <- reactive({
       k <- K()
       best <- res()$top$id[1]
@@ -179,8 +193,8 @@ explainPcaServer <- function(id, pca, search) {
         plotly::add_bars(y = ~best, name = sprintf("Best match #%04d", res()$top$id[1]),
                          marker = list(color = "#B8C4CE"),
                          hovertemplate = "PC%{x}: %{y:.3f}<extra>Best match</extra>") |>
-        plotly::layout(barmode = "group", xaxis = list(title = "Principal component", dtick = if (nrow(df) <= 30) 1 else NULL),
-                       yaxis = list(title = "Score z (pixel-intensity units)"),
+        plotly::layout(barmode = "group", xaxis = list(title = "PC", dtick = if (nrow(df) <= 30) 1 else NULL),
+                       yaxis = list(title = "PC scores"),
                        legend = list(orientation = "h", y = -0.25),
                        paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)") |>
         plotly::config(displaylogo = FALSE)
@@ -192,15 +206,17 @@ explainPcaServer <- function(id, pca, search) {
       out <- rbind(sprintf("%.3f", show$photo), sprintf("%.3f", show$best))
       colnames(out) <- paste0("PC", show$PC)
       cbind(` ` = c("Your photo", "Best match"), out)
-    }, striped = TRUE, width = "100%", caption = "처음 최대 20개 점수 (전체는 위 그래프 hover)")
+    }, striped = TRUE, width = "100%", caption = "Scores up to PC20")
 
-    rebuild_Ks <- reactive(sort(unique(c(1, 2, 5, 10, 20, 50, 100, K()))))
+    # Step 6: 여러 K에서 이미지 복원 결과 비교
+    rebuild_Ks <- reactive(sort(unique(c(1, 5, 10, 20, 50, 100, K()))))
 
     output$rebuild_gallery <- renderUI({
       s <- sel(); z <- project_photo(pca, s$x, max(rebuild_Ks()))
       do.call(layout_column_wrap, c(list(width = "120px", fill = FALSE),
         lapply(rebuild_Ks(), function(k) {
           r <- reconstruct(pca, z, k)
+
           shoe_figure(r, paste("K =", k),
                       sprintf("RMSE %.3f · %.0f%% var", sqrt(mean((r - s$x)^2)), 100 * pca$cum_ratio[k]),
                       size = 104, highlight = if (k == K()) "best" else NULL)
@@ -208,6 +224,7 @@ explainPcaServer <- function(id, pca, search) {
         list(shoe_figure(s$x, "Original", "4,096 pixels", size = 104, highlight = "query"))))
     })
 
+    # K에 따른 복원 오차(RMSE)
     output$rebuild_curve <- plotly::renderPlotly({
       s <- sel(); ks <- 1:K_MAX
       z <- project_photo(pca, s$x, K_MAX)
@@ -223,9 +240,10 @@ explainPcaServer <- function(id, pca, search) {
         plotly::config(displaylogo = FALSE)
     })
 
+    # Step 7: 사전 계산된 LOO 정확도로 K별 검색 성능 비교
     output$loo_plot <- plotly::renderPlotly({
       la <- pca$loo_accuracy
-      validate(need(!is.null(la), "캐시에 LOO 정확도가 없습니다. scripts/precompute_pca.R 를 다시 실행하세요."))
+      validate(need(!is.null(la), "LOO accuracy data is missing."))
       plotly::plot_ly(la, x = ~K, y = ~ 100 * accuracy, type = "scatter", mode = "lines+markers",
                       line = list(color = COL$primary, width = 2.5), marker = list(size = 8),
                       hovertemplate = "K = %{x}<br>accuracy = %{y:.1f}%<extra></extra>") |>
